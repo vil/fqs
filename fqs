@@ -1,0 +1,83 @@
+#! /usr/bin/bash
+# |----------------------------------|
+# | Copyright (c) 2024 Vili. GPL-3.0 |
+# |----------------------------------|
+
+
+# Functions
+# -----------
+# Performs a system update and upgrade.
+sys_update() {
+    dnf update
+    dnf upgrade
+}
+
+# Adds and enables the rpm repos.
+add_rpm_repos() {
+    dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+    sleep 1
+    dnf install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+    sleep 1
+    dnf group update core
+}
+
+# Speeds up dnf.
+append_dnf_configs() {
+    echo "max_parallel_downloads=10" >> /etc/dnf/dnf.conf
+    echo "defaultyes=True" >> /etc/dnf/dnf.conf
+    echo "fastestmirror=True" >> /etc/dnf/dnf.conf
+    dnf upgrade --refresh
+}
+
+# Install user selected software if any,
+install_selection() {
+    dnf install $1
+}
+
+
+# Main
+# ------------
+if [ $(whoami) = "root" ]; then
+    echo "FQS (Fedora Quick Start) Script"
+    echo
+    echo "Finish your post installation steps easily."
+    echo
+    echo "By Vili (https://vili.dev/)"
+    echo
+    echo "Do you want to continue with this script? (y/N) "
+    read input
+    if [[ $input == "y" ||  $input == "Y" ]]; then
+        echo "Starting with an system update & upgrade..."
+        sleep 2
+        sys_update
+        echo "Done!"
+        echo
+        echo "Now enabling RPM Fusion repos..."
+        sleep 2
+        add_rpm_repos
+        echo "Done!"
+        echo
+        echo "Now speeding up dnf..."
+        sleep 2
+        append_dnf_configs
+        echo "Done!"
+        echo
+        echo "Lastly, do you want to install anything? (y/N)"
+        read inp
+        if [[ $inp == "y" || $inp == "Y" ]]; then
+            echo "Alright, what do you want to intall? (type them formatted like this: discord firefox etc)"
+            read software
+            echo "Installing $software..."
+            install_selection $software
+            echo "Done!"
+            echo "Everything done now!"
+        else
+            echo "Everything done now!"
+        fi
+
+    else
+        echo "Cancelled, Goodbye!"
+    fi        
+else          
+    echo "Please run this script as root!"
+fi
