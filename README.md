@@ -5,6 +5,7 @@ Made this for myself, but I'll upload it here for everyone if someone else wants
 
 ## Run
 You can run this script simply with one line without installing anything:
+
 `sh -c "$(curl -sS https://raw.githubusercontent.com/vil/fqs/master/fqs)"`
 
 Or you can follow the installation steps below.
