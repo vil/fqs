@@ -21,6 +21,11 @@ add_rpm_repos() {
     dnf group update core
 }
 
+# Adds and enables flathub repos.
+add_flatpak_repos() {
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+}
+
 # Speeds up dnf.
 append_dnf_configs() {
     echo "max_parallel_downloads=10" >> /etc/dnf/dnf.conf
@@ -57,6 +62,11 @@ if [ $(whoami) = "root" ]; then
         add_rpm_repos
         echo "Done!"
         echo
+        echo "Now enabling flathub repos..."
+        sleep 2
+        add_flatpak_repos
+        echo "Done!"
+        echo
         echo "Now speeding up dnf..."
         sleep 2
         append_dnf_configs
@@ -70,6 +80,7 @@ if [ $(whoami) = "root" ]; then
             echo "Installing $software..."
             install_selection $software
             echo "Done!"
+            sleep 1
             echo "Everything done now!"
         else
             echo "Everything done now!"
