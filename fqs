@@ -34,6 +34,14 @@ append_dnf_configs() {
     dnf upgrade --refresh
 }
 
+# Add vscode repo and install vscode
+add_vscode() {
+    rpm --import https://packages.microsoft.com/keys/microsoft.asc
+    sh -c 'echo -e "[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" > /etc/yum.repos.d/vscode.repo'
+    dnf update
+    dnf install code
+}
+
 # Install user selected software if any,
 install_selection() {
     dnf install $1
@@ -72,7 +80,17 @@ if [ $(whoami) = "root" ]; then
         append_dnf_configs
         echo "Done!"
         echo
-        echo "Lastly, do you want to install anything? (y/N)"
+        echo "Do you want to enable vscode repos and install vscode? (y/N)"
+        echo
+        read in
+        if [[ $in == "y" || $in == "Y" ]]; then
+            add_vscode
+            echo "Done!"
+        else
+            echo "Skipping vscode installation..."
+        fi
+        echo    
+        echo "Lastly, do you want to install anything else? (y/N)"
         read inp
         if [[ $inp == "y" || $inp == "Y" ]]; then
             echo "Alright, what do you want to intall? (type them formatted like this: discord firefox etc)"
