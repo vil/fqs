@@ -42,9 +42,27 @@ add_vscode() {
     dnf install code
 }
 
+# Installs the Nvidia drivers if an Nvidia GPU is detected
+needs_nvidia() {
+    if lspci | grep -q NVIDIA; then
+        echo "Nvidia GPU detected. Do you want to install Nvidia drivers (akmod-nvidia)? (y/N)"
+        read -r nvidia
+        if [[ "$nvidia" == "y" || "$nvidia" == "Y" ]]; then
+            dnf install akmod-nvidia
+            echo "Done!"
+        else
+            echo "Skipping..."
+        fi
+    else
+        echo "System is not using Nvidia."
+    fi
+}
+
 # Install user selected software if any,
 install_selection() {
-    dnf install $1
+    for package in "$@"; do
+        dnf install "$package"
+    done
 }
 
 
@@ -80,6 +98,10 @@ if [ $(whoami) = "root" ]; then
         append_dnf_configs
         echo "Done!"
         echo
+        echo "Checking if you are using a Nvidia GPU..."
+        sleep 2
+        needs_nvidia
+        echo
         echo "Do you want to enable vscode repos and install vscode? (y/N)"
         echo
         read in
@@ -99,9 +121,9 @@ if [ $(whoami) = "root" ]; then
             install_selection $software
             echo "Done!"
             sleep 1
-            echo "Everything done now!"
+            echo "Everything done now, a reboot is recommended!"
         else
-            echo "Everything done now!"
+            echo "Everything done now, a reboot is recommended!"
         fi
 
     else
