@@ -133,7 +133,7 @@ if [ $(whoami) = "root" ]; then
         echo "Lastly, do you want to install anything else? (y/N)"
         read -r extra_installs
         if [[ $extra_installs == "y" || $extra_installs == "Y" ]]; then
-            echo "Alright, what do you want to intall? (type them formatted like this: discord firefox etc)"
+            echo "Alright, what do you want to intall? (separated by spaces)"
             read -r software
             echo "Installing $software..."
             install_selection $software
