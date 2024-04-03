@@ -53,7 +53,7 @@ add_dev_tools() {
 # Installs the Nvidia drivers if an Nvidia GPU is detected
 needs_nvidia() {
     if lspci | grep -q NVIDIA; then
-        echo "Nvidia GPU detected. Do you want to install Nvidia drivers (akmod-nvidia)? (y/N)"
+        echo "Nvidia GPU detected. Do you want to install Nvidia drivers (akmod-nvidia)? (y/N) "
         read -r wants_nvidia
         if [[ $wants_nvidia == "y" || $wants_nvidia == "Y" ]]; then
             dnf install akmod-nvidia -y
@@ -66,11 +66,17 @@ needs_nvidia() {
     fi
 }
 
-# Install user selected software if any,
+# Install user specifed software if any
 install_selection() {
     for package in "$@"; do
         dnf install "$package" -y
     done
+}
+
+# Install oh-my-zsh
+install_oh_my_zsh() {
+    dnf install zsh -y
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
 
@@ -130,7 +136,7 @@ if [ $(whoami) = "root" ]; then
             echo "Skipping devtools installation..."
         fi
         echo
-        echo "Lastly, do you want to install anything else? (y/N)"
+        echo "Do you want to install anything else? (y/N)"
         read -r extra_installs
         if [[ $extra_installs == "y" || $extra_installs == "Y" ]]; then
             echo "Alright, what do you want to intall? (separated by spaces)"
@@ -139,11 +145,16 @@ if [ $(whoami) = "root" ]; then
             install_selection $software
             echo "Done!"
             sleep 1
-            echo "Everything done now, a reboot is recommended!"
         else
-            echo "Everything done now, a reboot is recommended!"
+            echo "Skipping optional software installation..."
         fi
-
+        echo
+        echo "Lastly, do you want to install oh-my-zsh, for a nicer and better shell?"
+        read -r ohmyzsh
+        if [[ $ohmyzsh == "y" || $ohmyzsh == "Y" ]]; then
+            echo "Installing oh-my-zsh... This is the last step, remember to reboot your system after this!"
+            install_oh_my_zsh
+            echo "Done!"
     else
         echo "Cancelled, Goodbye!"
     fi        
