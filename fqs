@@ -1,4 +1,4 @@
-#! /usr/bin/bash
+#!/usr/bin/bash
 # |----------------------------------|
 # | Copyright (c) 2024 Vili. GPL-3.0 |
 # |----------------------------------|
@@ -155,6 +155,9 @@ if [ $(whoami) = "root" ]; then
             echo "Installing oh-my-zsh... This is the last step, remember to reboot your system after this!"
             install_oh_my_zsh
             echo "Done!"
+        else
+            echo "Skipping oh-my-zsh installation..."
+        fi
     else
         echo "Cancelled, Goodbye!"
     fi        
