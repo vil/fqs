@@ -149,7 +149,7 @@ if [ $(whoami) = "root" ]; then
             echo "Skipping optional software installation..."
         fi
         echo
-        echo "Lastly, do you want to install oh-my-zsh, for a nicer and better shell?"
+        echo "Lastly, do you want to install oh-my-zsh, for a nicer and better shell? (y/N) "
         read -r ohmyzsh
         if [[ $ohmyzsh == "y" || $ohmyzsh == "Y" ]]; then
             echo "Installing oh-my-zsh... This is the last step, remember to reboot your system after this!"
