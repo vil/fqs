@@ -75,7 +75,7 @@ install_selection() {
 
 # Install oh-my-zsh
 install_oh_my_zsh() {
-    dnf install zsh -y
+    dnf install zsh git -y
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
