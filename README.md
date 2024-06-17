@@ -13,8 +13,7 @@ Or you can follow the installation steps below.
 ## Installation
 1. Clone the repository `git clone https://github.com/vil/fqs.git`
 2. Make the script runnable `chmod +x fqs`
-3. Change to root `su`
-4. Run the script `./fqs`
+3. Run the script with sudo permissions `sudo ./fqs`
 
 
 -----------------------------

@@ -8,17 +8,17 @@
 # -----------
 # Performs a system update and upgrade.
 sys_update() {
-    dnf update -y
-    dnf upgrade -y
+    sudo dnf update -y
+    sudo dnf upgrade -y
 }
 
 # Adds and enables the rpm repos.
 add_rpm_repos() {
-    dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm -y
+    sudo dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm -y
     sleep 1
-    dnf install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm -y
+    sudo dnf install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm -y
     sleep 1
-    dnf group update core -y
+    sudo dnf group update core -y
 }
 
 # Adds and enables flathub repos.
@@ -28,26 +28,26 @@ add_flatpak_repos() {
 
 # Speeds up dnf.
 append_dnf_configs() {
-    echo "max_parallel_downloads=10" >> /etc/dnf/dnf.conf
-    echo "defaultyes=True" >> /etc/dnf/dnf.conf
-    echo "fastestmirror=True" >> /etc/dnf/dnf.conf
-    dnf upgrade --refresh -y
+    sudo echo "max_parallel_downloads=10" >> /etc/dnf/dnf.conf
+    sudo echo "defaultyes=True" >> /etc/dnf/dnf.conf
+    sudo echo "fastestmirror=True" >> /etc/dnf/dnf.conf
+    sudo dnf upgrade --refresh -y
 }
 
 # Add vscode repo and install vscode
 add_vscode() {
     rpm --import https://packages.microsoft.com/keys/microsoft.asc
     sh -c 'echo -e "[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" > /etc/yum.repos.d/vscode.repo'
-    dnf update -y
-    dnf install code -y
+    sudo dnf update -y
+    sudo dnf install code -y
 }
 
 # Add useful developer tools
 add_dev_tools() {
     # TODO add more useful tools here...
     # These are the only ones that I personally need
-    dnf groupinstall "Development Tools" "Development Libraries" -y
-    dnf install kernel-devel python3-pip python3-devel git nodejs nodejs-npm -y
+    sudo dnf groupinstall "Development Tools" "Development Libraries" -y
+    sudo dnf install kernel-devel python3-pip python3-devel git nodejs nodejs-npm -y
 }
 
 # Installs the Nvidia drivers if an Nvidia GPU is detected
@@ -56,7 +56,7 @@ needs_nvidia() {
         echo "Nvidia GPU detected. Do you want to install Nvidia drivers (akmod-nvidia)? (y/N) "
         read -r wants_nvidia
         if [[ $wants_nvidia == "y" || $wants_nvidia == "Y" ]]; then
-            dnf install akmod-nvidia -y
+            sudo dnf install akmod-nvidia -y
             echo "Done!"
         else
             echo "Skipping..."
@@ -69,13 +69,13 @@ needs_nvidia() {
 # Install user specifed software if any
 install_selection() {
     for package in "$@"; do
-        dnf install "$package" -y
+        sudo dnf install "$package" -y
     done
 }
 
 # Install oh-my-zsh
 install_oh_my_zsh() {
-    dnf install zsh git -y
+    sudo dnf install zsh git -y
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
@@ -162,5 +162,5 @@ if [ $(whoami) = "root" ]; then
         echo "Cancelled, Goodbye!"
     fi        
 else          
-    echo "Please run this script as root!"
+    echo "Please run this script with sudo..!"
 fi
