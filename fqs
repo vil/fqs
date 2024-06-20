@@ -70,6 +70,12 @@ needs_nvidia() {
     fi
 }
 
+# Install tor, enable it and install tor launcher
+install_tor() {
+    sudo dnf install tor torbrowser-launcher -y
+    sudo systemctl enable tor
+}
+
 # Install user specified software if any
 install_selection() {
     for package in "$@"; do
@@ -133,6 +139,14 @@ if [ $(whoami) = "root" ]; then
             echo "Done!"
         else
             echo "Skipping devtools installation..."
+        fi
+        echo
+        read -r -p "Do you want to install tor, torbrowser and enable the tor service? (y/N) " wants_tor
+        if [[ $wants_tor == "y" || $wants_tor == "Y" ]]; then
+            install_tor
+            echo "Done!"
+        else
+            echo "Skipping tor installation..."
         fi
         echo
         read -r -p "Do you want to install anything else? (y/N) " extra_installs
