@@ -15,6 +15,10 @@ Or you can follow the installation steps below.
 2. Make the script runnable `chmod +x fqs`
 3. Run the script with sudo permissions `sudo ./fqs`
 
+Avoid running this as the **root** user, only run it with **sudo**. Otherwise oh-my-zsh will install on the root account which is bad.
+
+## Contributing
+If you are a Fedora user and want to improve this, just feel free to open up a pull request :)
 
 -----------------------------
 ## License
