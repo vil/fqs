@@ -81,6 +81,8 @@ hid_apple_patch() {
     fi
 
     echo "options hid_apple fnmode=0" | sudo tee -a /etc/modprobe.d/hid_apple.conf
+    sudo modprobe -r hid_apple
+    sudo modprobe hid_apple
 }
 
 # Create flags.conf to /etc/dracut.conf.d/ to allow using bluetooth keyboard when decrypting
@@ -109,14 +111,14 @@ install_tor() {
 # Install user specified software if any
 install_selection() {
     for package in "$@"; do
-        if sudo dnf list "$package" &> /dev/null; then
+        if sudo dnf list --quiet "$package" &> /dev/null; then
             # Package is available in DNF repositories, install it
             sudo dnf install "$package" -y
         else
             # Package is not available in DNF repositories, search for it in Flatpak
-            if flatpak search "$package" &> /dev/null; then
+            if flatpak search --quiet "$package" &> /dev/null; then
                 # Package is available in Flatpak, install it
-                sudo flatpak install "$package" -y
+                flatpak install "$package" -y
             else
                 # Package is not available in either DNF or Flatpak, print an error message
                 echo "Error: Package '$package' not found in DNF or Flatpak repositories."
