@@ -53,7 +53,7 @@ add_dev_tools() {
     # TODO add more useful tools here...
     # These are the only ones that I personally need
     sudo dnf groupinstall "Development Tools" "Development Libraries" -y
-    sudo dnf install kernel-devel python3-pip python3-devel git nodejs nodejs-npm -y
+    sudo dnf install kernel-devel android-tools python3-pip python3-devel git nodejs nodejs-npm -y
 }
 
 # Installs the Nvidia drivers if an Nvidia GPU is detected
