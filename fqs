@@ -108,7 +108,19 @@ install_tor() {
 # Install user specified software if any
 install_selection() {
     for package in "$@"; do
-        sudo dnf install "$package" -y
+        if sudo dnf list "$package" &> /dev/null; then
+            # Package is available in DNF repositories, install it
+            sudo dnf install "$package" -y
+        else
+            # Package is not available in DNF repositories, search for it in Flatpak
+            if flatpak search "$package" &> /dev/null; then
+                # Package is available in Flatpak, install it
+                sudo flatpak install "$package" -y
+            else
+                # Package is not available in either DNF or Flatpak, print an error message
+                echo "Error: Package '$package' not found in DNF or Flatpak repositories."
+            fi
+        fi
     done
 }
 
