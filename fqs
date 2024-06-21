@@ -2,6 +2,7 @@
 # |----------------------------------|
 # | Copyright (c) 2024 Vili. GPL-3.0 |
 # |----------------------------------|
+# Made in Finland, with love.
 
 # Functions
 # -----------
@@ -165,6 +166,9 @@ if [ $(whoami) = "root" ]; then
         echo "Checking if you are using a Nvidia GPU..."
         sleep 2
         needs_nvidia
+        echo
+        echo "Now comes the user selections, read and answer carefully!"
+        sleep 2
         echo
         read -r -p "If you use a bluetooth keyboard, do you want to allow bluetooth keyboard usage during the device decryption? This will regenerate initramfs with the new flags. (y/N) " wants_dracut_patch
         if [[ $wants_dracut_patch == "y" || $wants_dracut_patch == "Y" ]]; then
