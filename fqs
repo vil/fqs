@@ -70,6 +70,18 @@ needs_nvidia() {
     fi
 }
 
+# Create hid_apple.conf and append options to fix bluetooth FN key problems
+# /etc/modprobe.d/hid_apple.conf
+# options hid_apple fnmode=0
+hid_apple_patch() {
+    # Create the hid_apple.conf file if it doesn't exist
+    if [ ! -f /etc/modprobe.d/hid_apple.conf ]; then
+        sudo touch /etc/modprobe.d/hid_apple.conf
+    fi
+
+    echo "options hid_apple fnmode=0" | sudo tee -a /etc/modprobe.d/hid_apple.conf
+}
+
 # Install tor, enable it and install tor launcher
 install_tor() {
     sudo dnf install tor torbrowser-launcher -y
@@ -125,6 +137,15 @@ if [ $(whoami) = "root" ]; then
         sleep 2
         needs_nvidia
         echo
+        read -r -p "If you use a bluetooth keyboard and your fn key doesn't work correctly, do you want to patch that? (y/N) " wants_hidapple_patch
+        if [[ $wants_hidapple_patch == "y" || $wants_hidapple_patch == "Y" ]]; then
+            hid_apple_patch
+            echo "Done!"
+        else
+            echo "Skipping hid_apple patching..."
+        fi
+        echo
+        sleep 1
         read -r -p "Do you want to enable vscode repos and install vscode? (y/N) " wants_vscode
         if [[ $wants_vscode == "y" || $wants_vscode == "Y" ]]; then
             add_vscode
@@ -163,6 +184,7 @@ if [ $(whoami) = "root" ]; then
         read -r -p "Lastly, do you want to install oh-my-zsh, for a nicer and better shell? (y/N) " ohmyzsh
         if [[ $ohmyzsh == "y" || $ohmyzsh == "Y" ]]; then
             echo "Installing oh-my-zsh... This is the last step, remember to reboot your system after this!"
+            sleep 2
             install_oh_my_zsh
             echo "Done!"
         else
