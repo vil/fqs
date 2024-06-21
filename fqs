@@ -82,6 +82,23 @@ hid_apple_patch() {
     echo "options hid_apple fnmode=0" | sudo tee -a /etc/modprobe.d/hid_apple.conf
 }
 
+# Create flags.conf to /etc/dracut.conf.d/ to allow using bluetooth keyboard when decrypting
+# Added flags:
+# hostonly="yes"
+# add_dracutmodules+=" bluetooth "
+add_dracut_flags() {
+    # Create the flags.conf file if it doesn't exist
+    if [ ! -f /etc/dracut.conf.d/flags.conf ]; then
+        sudo touch /etc/dracut.conf.d/flags.conf
+    fi
+
+    echo "hostonly=\"yes\"" | sudo tee -a /etc/dracut.conf.d/flags.conf
+    echo "add_dracutmodules+=\" bluetooth \"" | sudo tee -a /etc/dracut.conf.d/flags.conf
+
+    # Regenerate the initramfs to apply the changes
+    sudo dracut --regenerate-all --force --verbose
+}
+
 # Install tor, enable it and install tor launcher
 install_tor() {
     sudo dnf install tor torbrowser-launcher -y
@@ -137,6 +154,14 @@ if [ $(whoami) = "root" ]; then
         sleep 2
         needs_nvidia
         echo
+        read -r -p "If you use a bluetooth keyboard, do you want to allow bluetooth keyboard usage during the device decryption? This will regenerate initramfs with the new flags. (y/N) " wants_dracut_patch
+        if [[ $wants_dracut_patch == "y" || $wants_dracut_patch == "Y" ]]; then
+            add_dracut_flags
+            echo "Done!"
+        else
+            echo "Skipping adding dracut flags..."
+        fi
+        sleep 1
         read -r -p "If you use a bluetooth keyboard and your fn key doesn't work correctly, do you want to patch that? (y/N) " wants_hidapple_patch
         if [[ $wants_hidapple_patch == "y" || $wants_hidapple_patch == "Y" ]]; then
             hid_apple_patch
