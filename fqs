@@ -172,15 +172,7 @@ if [ $(whoami) = "root" ]; then
         echo "Now comes the user selections, read and answer carefully!"
         sleep 2
         echo
-        read -r -p "If you use a bluetooth keyboard, do you want to allow bluetooth keyboard usage during the device decryption? This will regenerate initramfs with the new flags. (y/N) " wants_dracut_patch
-        if [[ $wants_dracut_patch == "y" || $wants_dracut_patch == "Y" ]]; then
-            add_dracut_flags
-            echo "Done!"
-        else
-            echo "Skipping adding dracut flags..."
-        fi
-        sleep 1
-        read -r -p "If you use a bluetooth keyboard and your fn key doesn't work correctly, do you want to patch that? (y/N) " wants_hidapple_patch
+        read -r -p "If you use a bluetooth keyboard and your fn key doesn't work correctly (hid_apple fnmode), do you want to patch that? (y/N) " wants_hidapple_patch
         if [[ $wants_hidapple_patch == "y" || $wants_hidapple_patch == "Y" ]]; then
             hid_apple_patch
             echo "Done!"
@@ -188,6 +180,14 @@ if [ $(whoami) = "root" ]; then
             echo "Skipping hid_apple patching..."
         fi
         echo
+        sleep 1
+        read -r -p "If you use a bluetooth keyboard, do you want to allow bluetooth keyboard usage during the device decryption? This will regenerate initramfs with the new flags. (y/N) " wants_dracut_patch
+        if [[ $wants_dracut_patch == "y" || $wants_dracut_patch == "Y" ]]; then
+            add_dracut_flags
+            echo "Done!"
+        else
+            echo "Skipping adding dracut flags..."
+        fi
         sleep 1
         read -r -p "Do you want to enable vscode repos and install vscode? (y/N) " wants_vscode
         if [[ $wants_vscode == "y" || $wants_vscode == "Y" ]]; then
