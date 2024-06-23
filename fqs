@@ -111,16 +111,17 @@ install_tor() {
 # Install user specified software if any
 install_selection() {
     for package in "$@"; do
-        if sudo dnf list --quiet "$package" &> /dev/null; then
-            # Package is available in DNF repositories, install it
-            sudo dnf install "$package" -y
+        if sudo dnf install -y "$package"; then
+            # Package installed successfully from DNF
+            echo "Package '$package' installed successfully from DNF."
         else
-            # Package is not available in DNF repositories, search for it in Flatpak
-            if flatpak search --quiet "$package" &> /dev/null; then
-                # Package is available in Flatpak, install it
-                flatpak install "$package" -y
+            echo "Not found from DNF, trying flatpak..."
+            sleep 1
+            if flatpak install -y "$package"; then
+                # Package installed successfully from Flatpak
+                echo "Package '$package' installed successfully from Flatpak."
             else
-                # Package is not available in either DNF or Flatpak, print an error message
+                # Package not available in either DNF or Flatpak, print an error message
                 echo "Error: Package '$package' not found in DNF or Flatpak repositories."
             fi
         fi
@@ -136,106 +137,104 @@ install_oh_my_zsh() {
 
 # Main
 # ------------
-if [ $(whoami) = "root" ]; then
-    echo "FQS (Fedora Quick Start) Script"
+echo "FQS (Fedora Quick Start) Script"
+echo
+echo "Finish your post installation steps easily."
+echo
+echo "By Vili (https://vili.dev/)"
+echo
+echo "You will be asked for the sudo password!"
+echo
+read -r -p "Do you want to continue with this script? (y/N) " input
+if [[ $input == "y" ||  $input == "Y" ]]; then
+    echo "Starting with an system update & upgrade..."
+    sleep 2
+    sys_update
+    echo "Done!"
     echo
-    echo "Finish your post installation steps easily."
+    echo "Now enabling RPM Fusion repos..."
+    sleep 2
+    add_rpm_repos
+    echo "Done!"
     echo
-    echo "By Vili (https://vili.dev/)"
+    echo "Now enabling flathub repos..."
+    sleep 2
+    add_flatpak_repos
+    echo "Done!"
     echo
-    read -r -p "Do you want to continue with this script? (y/N) " input
-    if [[ $input == "y" ||  $input == "Y" ]]; then
-        echo "Starting with an system update & upgrade..."
-        sleep 2
-        sys_update
+    echo "Now speeding up dnf..."
+    sleep 2
+    append_dnf_configs
+    echo "Done!"
+    echo
+    echo "Checking if you are using a Nvidia GPU..."
+    sleep 2
+    needs_nvidia
+    echo
+    echo "Now comes the user selections, read and answer carefully!"
+    sleep 2
+    echo
+    read -r -p "If you use a bluetooth keyboard and your fn key doesn't work correctly (hid_apple fnmode), do you want to patch that? (y/N) " wants_hidapple_patch
+    if [[ $wants_hidapple_patch == "y" || $wants_hidapple_patch == "Y" ]]; then
+        hid_apple_patch
         echo "Done!"
-        echo
-        echo "Now enabling RPM Fusion repos..."
-        sleep 2
-        add_rpm_repos
-        echo "Done!"
-        echo
-        echo "Now enabling flathub repos..."
-        sleep 2
-        add_flatpak_repos
-        echo "Done!"
-        echo
-        echo "Now speeding up dnf..."
-        sleep 2
-        append_dnf_configs
-        echo "Done!"
-        echo
-        echo "Checking if you are using a Nvidia GPU..."
-        sleep 2
-        needs_nvidia
-        echo
-        echo "Now comes the user selections, read and answer carefully!"
-        sleep 2
-        echo
-        read -r -p "If you use a bluetooth keyboard and your fn key doesn't work correctly (hid_apple fnmode), do you want to patch that? (y/N) " wants_hidapple_patch
-        if [[ $wants_hidapple_patch == "y" || $wants_hidapple_patch == "Y" ]]; then
-            hid_apple_patch
-            echo "Done!"
-        else
-            echo "Skipping hid_apple patching..."
-        fi
-        echo
-        sleep 1
-        read -r -p "If you use a bluetooth keyboard, do you want to allow bluetooth keyboard usage during the device decryption? This will regenerate initramfs with the new flags. (y/N) " wants_dracut_patch
-        if [[ $wants_dracut_patch == "y" || $wants_dracut_patch == "Y" ]]; then
-            add_dracut_flags
-            echo "Done!"
-        else
-            echo "Skipping adding dracut flags..."
-        fi
-        sleep 1
-        read -r -p "Do you want to enable vscode repos and install vscode? (y/N) " wants_vscode
-        if [[ $wants_vscode == "y" || $wants_vscode == "Y" ]]; then
-            add_vscode
-            echo "Done!"
-        else
-            echo "Skipping vscode installation..."
-        fi
-        echo
-        read -r -p "Do you want to install useful development tools? (y/N) " wants_dev_tools
-        if [[ $wants_dev_tools == "y" || $wants_dev_tools == "Y" ]]; then
-            add_dev_tools
-            echo "Done!"
-        else
-            echo "Skipping devtools installation..."
-        fi
-        echo
-        read -r -p "Do you want to install tor, torbrowser and enable the tor service? (y/N) " wants_tor
-        if [[ $wants_tor == "y" || $wants_tor == "Y" ]]; then
-            install_tor
-            echo "Done!"
-        else
-            echo "Skipping tor installation..."
-        fi
-        echo
-        read -r -p "Do you want to install anything else? (y/N) " extra_installs
-        if [[ $extra_installs == "y" || $extra_installs == "Y" ]]; then
-            read -r -p "Alright, what do you want to install? (separated by spaces) " software
-            echo "Installing $software..."
-            install_selection $software
-            echo "Done!"
-            sleep 1
-        else
-            echo "Skipping optional software installation..."
-        fi
-        echo
-        read -r -p "Lastly, do you want to install oh-my-zsh, for a nicer and better shell? (y/N) " ohmyzsh
-        if [[ $ohmyzsh == "y" || $ohmyzsh == "Y" ]]; then
-            echo "Installing oh-my-zsh... This is the last step, remember to reboot your system after this!"
-            sleep 2
-            install_oh_my_zsh
-            echo "Done!"
-        else
-            echo "Skipping oh-my-zsh installation..."
-        fi
     else
-        echo "Cancelled, Goodbye!"
-    fi        
-else          
-    echo "Please run this script with sudo..!"
-fi
+        echo "Skipping hid_apple patching..."
+    fi
+    echo
+    sleep 1
+    read -r -p "If you use a bluetooth keyboard, do you want to allow bluetooth keyboard usage during the device decryption? This will regenerate initramfs with the new flags. (y/N) " wants_dracut_patch
+    if [[ $wants_dracut_patch == "y" || $wants_dracut_patch == "Y" ]]; then
+        add_dracut_flags
+        echo "Done!"
+    else
+        echo "Skipping adding dracut flags..."
+    fi
+    sleep 1
+    read -r -p "Do you want to enable vscode repos and install vscode? (y/N) " wants_vscode
+    if [[ $wants_vscode == "y" || $wants_vscode == "Y" ]]; then
+        add_vscode
+        echo "Done!"
+    else
+        echo "Skipping vscode installation..."
+    fi
+    echo
+    read -r -p "Do you want to install useful development tools? (y/N) " wants_dev_tools
+    if [[ $wants_dev_tools == "y" || $wants_dev_tools == "Y" ]]; then
+        add_dev_tools
+        echo "Done!"
+    else
+        echo "Skipping devtools installation..."
+    fi
+    echo
+    read -r -p "Do you want to install tor, torbrowser and enable the tor service? (y/N) " wants_tor
+    if [[ $wants_tor == "y" || $wants_tor == "Y" ]]; then
+        install_tor
+        echo "Done!"
+    else
+        echo "Skipping tor installation..."
+    fi
+    echo
+    read -r -p "Do you want to install anything else? (y/N) " extra_installs
+    if [[ $extra_installs == "y" || $extra_installs == "Y" ]]; then
+        read -r -p "Alright, what do you want to install? (separated by spaces) " software
+        echo "Installing $software..."
+        install_selection $software
+        echo "Done!"
+        sleep 1
+    else
+        echo "Skipping optional software installation..."
+    fi
+    echo
+    read -r -p "Lastly, do you want to install oh-my-zsh, for a nicer and better shell? (y/N) " ohmyzsh
+    if [[ $ohmyzsh == "y" || $ohmyzsh == "Y" ]]; then
+        echo "Installing oh-my-zsh... This is the last step, remember to reboot your system after this!"
+        sleep 2
+        install_oh_my_zsh
+        echo "Done!"
+    else
+        echo "Skipping oh-my-zsh installation..."
+    fi
+else
+    echo "Cancelled, Goodbye!"
+fi        

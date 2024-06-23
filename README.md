@@ -6,16 +6,16 @@ Made this for myself, but I'll upload it here for everyone if someone else wants
 ## Run
 You can run this script simply with one line without installing anything:
 
-`sudo sh -c "$(curl -sS https://raw.githubusercontent.com/vil/fqs/master/fqs)"`
+`sh -c "$(curl -sS https://raw.githubusercontent.com/vil/fqs/master/fqs)"`
 
 Or you can follow the installation steps below.
 
 ## Installation
 1. Clone the repository `git clone https://github.com/vil/fqs.git`
 2. Make the script runnable `chmod +x fqs`
-3. Run the script with sudo permissions `sudo ./fqs`
+3. Run the script with sudo permissions `./fqs`
 
-Avoid running this as the **root** user, only run it with **sudo**. Otherwise oh-my-zsh will install on the root account which is bad.
+Avoid running this as the **root** user nor with **sudo**, otherwise oh-my-zsh will install on the root account which is bad.
 
 ## Contributing
 If you are a Fedora user and want to improve this, just feel free to open up a pull request :)
