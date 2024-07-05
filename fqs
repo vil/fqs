@@ -123,7 +123,7 @@ install_selection() {
 
 # Install zsh and starship.rs
 # Change the default shell to zsh
-# Add useful aliases and starship eval to .zshrc
+# Add useful aliases, starship eval to .zshrc and install my starship prompt https://raw.githubusercontent.com/vil/starship-prompt/master/starship.toml
 setup_shell() {
     sudo dnf install zsh -y
     curl -sS https://starship.rs/install.sh | sh
@@ -132,16 +132,25 @@ setup_shell() {
     if [ ! -f ~/.zshrc ]; then
         touch ~/.zshrc
     fi
-    
+
     tee -a ~/.zshrc <<EOF
 # Aliases
 alias d="sudo dnf"
 alias c="codium"
 alias f="flatpak"
 
-# Initalization of starship
+# Initialization of starship
 eval "$(starship init zsh)"
 EOF
+
+    # Check if starship.toml exists, remove it if it does
+    if [ -f ~/.config/starship.toml ]; then
+        rm ~/.config/starship.toml
+    fi
+
+    mkdir -p ~/.config/
+    wget -q -O ~/.config/starship.toml https://raw.githubusercontent.com/vil/starship-prompt/master/starship.toml
+
     echo "Done! It's recommended to reboot your system for the new shell to take place."
     echo "Also useful aliases have been added, such as:"
     echo "'d' short for 'sudo dnf'"
@@ -208,7 +217,7 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         echo "Skipping adding dracut flags..."
     fi
     sleep 1
-    read -r -p "Do you want to enable vscodium repos and install vscodium? (y/N) " wants_vscodium
+    read -r -p "Do you want to enable vscodium repos and install vscodium, the open-source alterantive of Microsoft vscode? (y/N) " wants_vscodium
     if [[ $wants_vscodium == "y" || $wants_vscodium == "Y" ]]; then
         add_vscodium
         echo "Done!"
@@ -216,7 +225,7 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         echo "Skipping vscodium installation..."
     fi
     echo
-    read -r -p "Do you want to install useful development tools? (y/N) " wants_dev_tools
+    read -r -p "Do you want to install useful development tools, such as git, android-tools, nodejs, npm, python3-pip..? (y/N) " wants_dev_tools
     if [[ $wants_dev_tools == "y" || $wants_dev_tools == "Y" ]]; then
         add_dev_tools
         echo "Done!"
@@ -234,7 +243,7 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
     echo
     read -r -p "Do you want to install anything else? (y/N) " extra_installs
     if [[ $extra_installs == "y" || $extra_installs == "Y" ]]; then
-        read -r -p "Alright, what do you want to install? (separated by spaces) " software
+        read -r -p "Alright, what do you want to install? (separated by spaces, for example 'discord spotify gimp') " software
         echo "Installing $software..."
         install_selection $software
         echo "Done!"
