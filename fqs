@@ -121,10 +121,34 @@ install_selection() {
     done
 }
 
-# Install oh-my-zsh
-install_oh_my_zsh() {
-    sudo dnf install zsh git -y
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+# Install zsh and starship.rs
+# Change the default shell to zsh
+# Add useful aliases and starship eval to .zshrc
+setup_shell() {
+    sudo dnf install zsh -y
+    curl -sS https://starship.rs/install.sh | sh
+    chsh -s /usr/bin/zsh
+
+    if [ ! -f ~/.zshrc ]; then
+        touch ~/.zshrc
+    fi
+    
+    tee -a ~/.zshrc <<EOF
+# Aliases
+alias d="sudo dnf"
+alias c="codium"
+alias f="flatpak"
+
+# Initalization of starship
+eval "$(starship init zsh)"
+EOF
+    echo "Done! It's recommended to reboot your system for the new shell to take place."
+    echo "Also useful aliases have been added, such as:"
+    echo "'d' short for 'sudo dnf'"
+    echo "'c' short for 'codium'"
+    echo "'f' short for 'flatpak'"
+    echo
+    echo "You can also create your own aliases by editing the .zshrc file in ~/.zshrc"
 }
 
 
@@ -219,14 +243,15 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         echo "Skipping optional software installation..."
     fi
     echo
-    read -r -p "Lastly, do you want to install oh-my-zsh, for a nicer and better shell? (y/N) " ohmyzsh
-    if [[ $ohmyzsh == "y" || $ohmyzsh == "Y" ]]; then
-        echo "Installing oh-my-zsh... This is the last step, remember to reboot your system after this!"
+    read -r -p "Lastly, do you want to install and setup a better shell? (zsh with starship.rs prompt) (y/N) " wants_shell
+    if [[ $wants_shell == "y" || $wants_shell == "Y" ]]; then
+        echo "Installing zsh and starship.rs..."
         sleep 2
-        install_oh_my_zsh
+        setup_shell
         echo "Done!"
     else
-        echo "Skipping oh-my-zsh installation..."
+        echo "Skipping better shell setup..."
+        echo "This was the last step, goodbye!"
     fi
 else
     echo "Cancelled, Goodbye!"
