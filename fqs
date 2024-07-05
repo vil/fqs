@@ -13,8 +13,8 @@ sys_update() {
 
 # Adds and enables the rpm repos.
 add_rpm_repos() {
-    sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
-    sudo dnf install -y https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+    sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-"$(rpm -E %fedora)".noarch.rpm
+    sudo dnf install -y https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-"$(rpm -E %fedora)".noarch.rpm
     sudo dnf group update core -y
 }
 
@@ -245,7 +245,7 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
     if [[ $extra_installs == "y" || $extra_installs == "Y" ]]; then
         read -r -p "Alright, what do you want to install? (separated by spaces, for example 'discord spotify gimp') " software
         echo "Installing $software..."
-        install_selection $software
+        install_selection "$software"
         echo "Done!"
         sleep 1
     else

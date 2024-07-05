@@ -1,0 +1,18 @@
+name: Shell Check
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Install ShellCheck
+      run: sudo apt-get install shellcheck -y
+
+    - name: Check the script
+      run: |
+        shellcheck fqs
