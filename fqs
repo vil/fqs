@@ -121,11 +121,22 @@ install_selection() {
     done
 }
 
-# Install zsh and starship.rs
+# Install zsh with useful plugins and starship.rs
 # Change the default shell to zsh
 # Add useful aliases, starship eval to .zshrc and install my starship prompt https://raw.githubusercontent.com/vil/starship-prompt/master/starship.toml
 setup_shell() {
-    sudo dnf install zsh -y
+    sudo dnf install zsh zsh-autosuggestions zsh-syntax-highlighting -y
+
+    mkdir -p ~/.config/
+    mkdir -p ~/.config/zsh
+    cd ~/.config/zsh || return
+    if ! command -v git &> /dev/null
+    then
+        sudo dnf install git -y
+    fi
+    git clone https://github.com/marlonrichert/zsh-autocomplete.git
+    cd || return
+
     curl -sS https://starship.rs/install.sh | sh
     chsh -s /usr/bin/zsh
 
@@ -134,6 +145,11 @@ setup_shell() {
     fi
 
     tee -a ~/.zshrc <<EOF
+# Plugins
+source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+source ~/.config/zsh/zsh-autocomplete/zsh-autocomplete.plugin.zsh
+
 # Aliases
 alias d="sudo dnf"
 alias c="codium"
@@ -148,7 +164,6 @@ EOF
         rm ~/.config/starship.toml
     fi
 
-    mkdir -p ~/.config/
     wget -q -O ~/.config/starship.toml https://raw.githubusercontent.com/vil/starship-prompt/master/starship.toml
 
     echo "Done! It's recommended to reboot your system for the new shell to take place."
