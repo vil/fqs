@@ -34,11 +34,33 @@ EOF
     sudo dnf upgrade --refresh -y
 }
 
-# Add vscodium repo and install it
+# Install the preferred code editor.
 install_code_editor() {
-    sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
-    printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=download.vscodium.com\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h" | sudo tee -a /etc/yum.repos.d/vscodium.repo
-    sudo dnf update -y && sudo dnf install codium -y
+    echo "Choose your preferred code editor:"
+    echo "1. [Vscode] (https://code.visualstudio.com/) Microsoft Visual Studio Code."
+    echo "2. [Vscodium] (https://vscodium.com/) Libre version of Microsoft Visual Studio Code."
+    echo "3. [Zed] (https://zed.dev) New and lighting fast text editor made in Rust."
+
+    read -r -p "Enter the number of your preferred editor: " editor_choice
+
+    case $editor_choice in
+        1)
+            sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
+            echo -e "[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | sudo tee /etc/yum.repos.d/vscode.repo > /dev/null
+            sudo dnf update -y && sudo dnf install code -y
+            ;;
+        2)
+            sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
+            printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=download.vscodium.com\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h" | sudo tee -a /etc/yum.repos.d/vscodium.repo
+            sudo dnf update -y && sudo dnf install codium -y
+            ;;
+        3)
+            curl -f https://zed.dev/install.sh | sh
+            ;;
+        *)
+            echo "Invalid choice. No editor installed."
+            ;;
+    esac
 }
 
 # Add useful developer tools
@@ -232,9 +254,9 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         echo "Skipping adding dracut flags..."
     fi
     sleep 1
-    read -r -p "Do you want to enable vscodium repos and install vscodium, the open-source alterantive of Microsoft vscode? (y/N) " wants_vscodium
-    if [[ $wants_vscodium == "y" || $wants_vscodium == "Y" ]]; then
-        add_vscodium
+    read -r -p "Do you want to install a code editor? (y/N) " wants_code_editor
+    if [[ $wants_code_editor == "y" || $wants_code_editor == "Y" ]]; then
+        install_code_editor
         echo "Done!"
     else
         echo "Skipping vscodium installation..."
