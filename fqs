@@ -35,7 +35,7 @@ EOF
 }
 
 # Add vscodium repo and install it
-add_vscodium() {
+install_code_editor() {
     sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
     printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=download.vscodium.com\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h" | sudo tee -a /etc/yum.repos.d/vscodium.repo
     sudo dnf update -y && sudo dnf install codium -y
@@ -43,7 +43,7 @@ add_vscodium() {
 
 # Add useful developer tools
 add_dev_tools() {
-    # TODO add more useful tools here...    
+    # TODO add more useful tools here...
     # These are the only ones that I personally need
     sudo dnf groupinstall "Development Tools" "Development Libraries" -y
     sudo dnf install kernel-devel android-tools python3-pip python3-devel git nodejs nodejs-npm -y
@@ -279,4 +279,4 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
     fi
 else
     echo "Cancelled, Goodbye!"
-fi        
+fi
