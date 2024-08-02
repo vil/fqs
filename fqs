@@ -259,7 +259,7 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         install_code_editor
         echo "Done!"
     else
-        echo "Skipping vscodium installation..."
+        echo "Skipping code editor installation..."
     fi
     echo
     read -r -p "Do you want to install useful development tools, such as git, android-tools, nodejs, npm, python3-pip..? (y/N) " wants_dev_tools
