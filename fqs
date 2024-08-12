@@ -38,7 +38,7 @@ EOF
 install_code_editor() {
     echo "Choose your preferred code editor:"
     echo "1. [Vscode] (https://code.visualstudio.com/) Microsoft Visual Studio Code."
-    echo "2. [Vscodium] (https://vscodium.com/) Libre version of Microsoft Visual Studio Code."
+    echo "2. [Vscodium] (https://vscodium.com/) Libre version of Microsoft Visual Studio Code, but has less extensions to install."
     echo "3. [Zed] (https://zed.dev) New and lighting fast text editor made in Rust."
 
     read -r -p "Enter the number of your preferred editor: " editor_choice
@@ -179,6 +179,7 @@ alias f="flatpak"
 
 # Initialization of starship
 eval "$(starship init zsh)"
+
 EOF
 
     # Check if starship.toml exists, remove it if it does
