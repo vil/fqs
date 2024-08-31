@@ -6,12 +6,12 @@ Made this for myself, but I'll upload it here for everyone if someone else wants
 ## Run
 You can run this script simply with one line without installing anything:
 
-`sh -c "$(curl -sS https://raw.githubusercontent.com/vil/fqs/master/fqs)"`
+`sh -c "$(curl -sS https://codeberg.org/vili/fqs/raw/branch/master/fqs)"`
 
 Or you can follow the installation steps below.
 
 ## Installation
-1. Clone the repository `git clone https://github.com/vil/fqs.git`
+1. Clone the repository `git clone https://codeberg.org/vili/fqs.git`
 2. Make the script runnable `chmod +x fqs`
 3. Run the script `./fqs`
 
