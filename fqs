@@ -40,6 +40,7 @@ install_code_editor() {
     echo "1. [Vscode] (https://code.visualstudio.com/) Microsoft Visual Studio Code."
     echo "2. [Vscodium] (https://vscodium.com/) Libre version of Microsoft Visual Studio Code, but has less extensions to install."
     echo "3. [Zed] (https://zed.dev) New and lighting fast text editor made in Rust."
+    echo "4. [NeoVim] (https://neovim.io/) Hyperextensible Vim-based text editor with NvChad (https://nvchad.com) config."
 
     read -r -p "Enter the number of your preferred editor: " editor_choice
 
@@ -56,6 +57,10 @@ install_code_editor() {
             ;;
         3)
             curl -f https://zed.dev/install.sh | sh
+            ;;
+        4)
+            sudo dnf update -y && sudo dnf install neovim -y
+            git clone https://github.com/NvChad/starter ~/.config/nvim && nvim
             ;;
         *)
             echo "Invalid choice. No editor installed."
