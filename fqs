@@ -15,6 +15,7 @@ sys_update() {
 add_rpm_repos() {
     sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-"$(rpm -E %fedora)".noarch.rpm
     sudo dnf install -y https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-"$(rpm -E %fedora)".noarch.rpm
+    sudo dnf install dnf-plugins-core -y
     sudo dnf group update core -y
 }
 
@@ -66,6 +67,35 @@ install_code_editor() {
             echo "Invalid choice. No editor installed."
             ;;
     esac
+}
+
+# Install the preferred browser.
+install_browser() {
+    echo "Choose your preferred browser:"
+    echo "1. [Librewolf] (https://librewolf.net/) A custom version of Firefox, focused on privacy, security and freedom."
+    echo "2. [Chromium] (https://chromium.org/) UnGoogled version of the Chrome browser."
+    echo "3. [Brave] (https://brave.com/) Privacy respecting and ad blocking browser based of Chromium."
+
+    read -r -p "Enter the number of your preferred browser: " browser_choice
+
+    case $browser_choice in
+        1)
+            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo
+            sudo dnf update -y && sudo dnf install librewolf -y
+            ;;
+        2)
+            sudo dnf install chromium -y
+            ;;
+        3)
+            sudo dnf config-manager --add-repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+            sudo rpm --import https://brave-browser-rpm-release.s3.brave.com/brave-core.asc
+            sudo dnf install brave-browser -y
+            ;;
+        *)
+            echo "Invalid choice. Going with the default browser (Firefox)."
+            ;;
+    esac
+
 }
 
 # Add useful developer tools
@@ -148,59 +178,12 @@ install_selection() {
     done
 }
 
-# Install zsh with useful plugins and starship.rs
-# Change the default shell to zsh
-# Add useful aliases, starship eval to .zshrc and install my starship prompt https://raw.githubusercontent.com/vil/starship-prompt/master/starship.toml
+# Install zsh and oh-my-zsh (https://ohmyz.sh/)
 setup_shell() {
-    sudo dnf install zsh zsh-autosuggestions zsh-syntax-highlighting -y
-
-    mkdir -p ~/.config/
-    mkdir -p ~/.config/zsh
-    cd ~/.config/zsh || return
-    if ! command -v git &> /dev/null
-    then
-        sudo dnf install git -y
-    fi
-    git clone https://github.com/marlonrichert/zsh-autocomplete.git
-    cd || return
-
-    curl -sS https://starship.rs/install.sh | sh
-    chsh -s /usr/bin/zsh
-
-    if [ ! -f ~/.zshrc ]; then
-        touch ~/.zshrc
-    fi
-
-    tee -a ~/.zshrc <<EOF
-# Plugins
-source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-source ~/.config/zsh/zsh-autocomplete/zsh-autocomplete.plugin.zsh
-
-# Aliases
-alias d="sudo dnf"
-alias c="codium"
-alias f="flatpak"
-
-# Initialization of starship
-eval "$(starship init zsh)"
-
-EOF
-
-    # Check if starship.toml exists, remove it if it does
-    if [ -f ~/.config/starship.toml ]; then
-        rm ~/.config/starship.toml
-    fi
-
-    wget -q -O ~/.config/starship.toml https://raw.githubusercontent.com/vil/starship-prompt/master/starship.toml
-
-    echo "Done! It's recommended to reboot your system for the new shell to take place."
-    echo "Also useful aliases have been added, such as:"
-    echo "'d' short for 'sudo dnf'"
-    echo "'c' short for 'codium'"
-    echo "'f' short for 'flatpak'"
-    echo
-    echo "You can also create your own aliases by editing the .zshrc file in ~/.zshrc"
+    echo "Installing zsh..."
+    sudo dnf install zsh -y
+    echo "Running the oh-my-zsh setup script..."
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
 
@@ -260,6 +243,14 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         echo "Skipping adding dracut flags..."
     fi
     sleep 1
+    read -r -p "Do you want to install a different browser, instead of using the default one (Firefox)? (y/N) " wants_browser
+    if [[ $wants_browser == "y" || $wants_browser == "Y" ]]; then
+        install_browser
+        echo "Done!"
+    else
+        echo "Going with the default browser..."
+    fi
+    echo
     read -r -p "Do you want to install a code editor? (y/N) " wants_code_editor
     if [[ $wants_code_editor == "y" || $wants_code_editor == "Y" ]]; then
         install_code_editor
@@ -295,9 +286,9 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         echo "Skipping optional software installation..."
     fi
     echo
-    read -r -p "Lastly, do you want to install and setup a better shell? (zsh with starship.rs prompt) (y/N) " wants_shell
+    read -r -p "Lastly, do you want to install and setup a better shell? (zsh with oh-my-zsh framework) (y/N) " wants_shell
     if [[ $wants_shell == "y" || $wants_shell == "Y" ]]; then
-        echo "Installing zsh and starship.rs..."
+        echo "Installing zsh and oh-my-zsh..."
         sleep 2
         setup_shell
         echo "Done!"
