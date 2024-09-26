@@ -72,9 +72,12 @@ install_code_editor() {
 # Install the preferred browser.
 install_browser() {
     echo "Choose your preferred browser:"
-    echo "1. [Librewolf] (https://librewolf.net/) A custom version of Firefox, focused on privacy, security and freedom."
-    echo "2. [Chromium] (https://chromium.org/) UnGoogled version of the Chrome browser."
-    echo "3. [Brave] (https://brave.com/) Privacy respecting and ad blocking browser based of Chromium."
+    echo "1. Librewolf: A custom version of Firefox, focused on privacy, security and freedom."
+    echo "   https://librewolf.net/"
+    echo "2. Chromium: UnGoogled version of the Chrome browser."
+    echo "   https://chromium.org/"
+    echo "3. Brave: Privacy respecting and ad blocking browser based of Chromium."
+    echo "   https://brave.com/"
 
     read -r -p "Enter the number of your preferred browser: " browser_choice
 
@@ -95,7 +98,46 @@ install_browser() {
             echo "Invalid choice. Going with the default browser (Firefox)."
             ;;
     esac
+}
 
+# Install communicating apps
+install_communication() {
+    echo "Choose your preferred communication app(s):"
+    echo "1. Discord: A popular communication platform for communities, including voice, video, and text chat."
+    echo "   https://discord.com/"
+    echo "2. Vesktop: A modified Discord client with plugin support and hardened privacy."
+    echo "   https://vencord.dev/"
+    echo "3. Element Desktop: A secure and private communication platform with end-to-end encryption."
+    echo "   https://element.io/"
+    echo "4. Telegram Desktop: A cloud-based messaging platform with a focus on security and speed."
+    echo "   https://telegram.org/"
+    echo "5. Signal Desktop: A private messaging app with end-to-end encryption and a focus on security."
+    echo "   https://signal.org/"
+
+    read -r -p "Enter the number(s) of your preferred communication app(s), separated by spaces: " app_choice
+
+    for choice in $app_choice; do
+        case $choice in
+            1)
+                sudo dnf install discord -y
+                ;;
+            2)
+                flatpak install dev.vencord.Vesktop -y
+                ;;
+            3)
+                flatpak install im.riot.Riot -y
+                ;;
+            4)
+                sudo dnf install telegram-desktop -y
+                ;;
+            5)
+                flatpak install org.signal.Signal -y
+                ;;
+            *)
+                echo "Invalid choice: $choice"
+                ;;
+        esac
+    done
 }
 
 # Add useful developer tools
@@ -249,6 +291,14 @@ if [[ $input == "y" ||  $input == "Y" ]]; then
         echo "Done!"
     else
         echo "Going with the default browser..."
+    fi
+    echo
+    read -r -p "Do you want to install any communication apps? (y/N) " wants_communication
+    if [[ $wants_communication == "y" || $wants_communication == "Y" ]]; then
+        install_communication
+        echo "Done!"
+    else
+        echo "Skipping installing communication apps..."
     fi
     echo
     read -r -p "Do you want to install a code editor? (y/N) " wants_code_editor
