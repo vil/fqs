@@ -1,7 +1,18 @@
 # fqs
-Fedora Quick Start script - Finish your post installation steps easily.
+Fedora Quick Start, a script to finish your post-installation steps easily.
 
-Made this for myself, but I'll upload it here for everyone if someone else wants to use it `¯\_(ツ)_/¯`
+Steps the script does:
+1. Updates and upgrades the system.
+2. Enables RPM Fusion repositories for additional software.
+3. Enables Flathub repositories for flatpak packages.
+4. Configures dnf to speed up package management.
+5. Installs Nvidia drivers if an Nvidia GPU is detected.
+6. Patches bluetooth and keyboard settings.
+7. Installs a list of user-specified software.
+8. Sets up zsh shell with oh-my-zsh.
+
+all steps require user confirmation, so you can choose yourself what to do.
+
 
 ## Run
 You can run this script simply with one line without installing anything:
@@ -11,7 +22,7 @@ You can run this script simply with one line without installing anything:
 Or you can follow the installation steps below.
 
 ## Installation
-1. Clone the repository `git clone https://codeberg.org/vili/fqs.git`
+1. Clone the repository `git clone https://codeberg.org/vili/fqs.git && cd fqs`
 2. Make the script runnable `chmod +x fqs`
 3. Run the script `./fqs`
 
