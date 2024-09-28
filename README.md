@@ -1,6 +1,8 @@
 # fqs
 Fedora Quick Start, a script to finish your post-installation steps easily.
 
+<img src="real+fax.jpeg" width=550px height=350px>
+
 Steps the script does:
 1. Updates and upgrades the system.
 2. Enables RPM Fusion repositories for additional software.
