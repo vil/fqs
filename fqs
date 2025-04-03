@@ -120,16 +120,33 @@ install_communication() {
     echo "  3. Element Desktop (https://element.io/)"
     echo "  4. Telegram Desktop (https://telegram.org/)"
     echo "  5. Signal Desktop (https://signal.org/)"
-    read -r -p "Your choices: " choices
+    
+    # Temporarily set IFS to include spaces
+    local oldIFS=$IFS
+    IFS=' '
+    read -ra choices -p "Your choices: "
+    IFS=$oldIFS
 
-    for choice in $choices; do
+    for choice in "${choices[@]}"; do
         case "$choice" in
-            1) sudo dnf install discord -y ;;
-            2) flatpak install -y flathub dev.vencord.Vesktop ;;
-            3) flatpak install -y flathub im.riot.Riot ;;
-            4) sudo dnf install telegram-desktop -y ;;
-            5) flatpak install -y flathub org.signal.Signal ;;
-            *) echo "Invalid choice: $choice" ;;
+            1)
+                sudo dnf install discord -y
+                ;;
+            2)
+                flatpak install -y flathub dev.vencord.Vesktop
+                ;;
+            3)
+                flatpak install -y flathub im.riot.Riot
+                ;;
+            4)
+                sudo dnf install telegram-desktop -y
+                ;;
+            5)
+                flatpak install -y flathub org.signal.Signal
+                ;;
+            *)
+                echo "Invalid choice: $choice"
+                ;;
         esac
     done
 }
@@ -185,19 +202,29 @@ install_tor() {
 
 # Install extra software by trying DNF first then Flatpak.
 install_selection() {
-    for pkg in "$@"; do
-        if sudo dnf install -y "$pkg"; then
-            echo "Installed $pkg via DNF."
+    local oldIFS pkg
+    # Save the current IFS and temporarily set it to a space for word splitting.
+    oldIFS="$IFS"
+    IFS=' '
+    for pkg in $*; do
+        if rpm -q "$pkg" &>/dev/null; then
+            echo "$pkg is already installed."
         else
-            echo "DNF did not find $pkg. Trying Flatpak from flathub..."
-            sleep 1
-            if flatpak install -y flathub "$pkg"; then
-                echo "Installed $pkg via Flatpak."
+            echo "Attempting to install $pkg via DNF..."
+            if sudo dnf install -y "$pkg"; then
+                echo "Installed $pkg via DNF."
             else
-                echo "Error: $pkg not found in DNF or Flatpak repositories."
+                echo "DNF did not find $pkg. Trying Flatpak from flathub..."
+                sleep 1
+                if flatpak install -y flathub "$pkg"; then
+                    echo "Installed $pkg via Flatpak."
+                else
+                    echo "Error: $pkg not found in DNF or Flatpak repositories."
+                fi
             fi
         fi
     done
+    IFS="$oldIFS"
 }
 
 # Install zsh and oh-my-zsh (runs oh-my-zsh installer as user).
