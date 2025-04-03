@@ -1,36 +1,54 @@
-#!/usr/bin/bash
-# |----------------------------------|
-# | Copyright (c) 2024 Vili. GPL-3.0 |
-# |----------------------------------|
-# Made in Finland, with love.
+#!/usr/bin/env bash
+# |---------------------------------------|
+# | Copyright (c) 2024-2925 Vili. GPL-3.0 |
+# |---------------------------------------|
+#        Made in Finland, with love.
 
-# Functions
-# -----------
-# Performs a system update and upgrade.
+set -euo pipefail
+IFS=$'\n\t'
+
+# Check if a command exists
+command_exists() {
+    command -v "$1" &>/dev/null
+}
+
+# Performs a full system upgrade.
 sys_update() {
-    sudo dnf update -y && sudo dnf upgrade -y
+    sudo dnf upgrade --refresh -y
 }
 
-# Adds and enables the rpm repos.
+# Adds and enables the RPM Fusion repositories.
 add_rpm_repos() {
-    sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-"$(rpm -E %fedora)".noarch.rpm
-    sudo dnf install -y https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-"$(rpm -E %fedora)".noarch.rpm
-    sudo dnf install dnf-plugins-core -y
-    sudo dnf group update core -y
+    local fedora_ver
+    fedora_ver="$(rpm -E %fedora)"
+    sudo dnf install -y "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_ver}.noarch.rpm" \
+                         "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm"
+    sudo dnf install -y dnf-plugins-core
+    sudo dnf group upgrade core -y
 }
 
-# Adds and enables flathub repos.
+# Adds and enables the Flathub remote.
 add_flatpak_repos() {
+    if ! command_exists flatpak; then
+        echo "Flatpak not found. Installing flatpak..."
+        sudo dnf install flatpak -y
+    fi
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 }
 
-# Speeds up dnf.
+# Appends performance-friendly options to /etc/dnf/dnf.conf.
 append_dnf_configs() {
-    sudo tee -a /etc/dnf/dnf.conf <<EOF
+    local conf_file="/etc/dnf/dnf.conf"
+    sudo tee -a "$conf_file" >/dev/null <<'EOF'
+gpgcheck=1
+clean_requirements_on_remove=True
+skip_if_unavailable=True
+deltarpm=False
+best=False
+keepcache=True
+installonly_limit=3
 max_parallel_downloads=10
 defaultyes=True
-fastestmirror=True
-deltarpm=True
 EOF
     sudo dnf upgrade --refresh -y
 }
@@ -38,30 +56,30 @@ EOF
 # Install the preferred code editor.
 install_code_editor() {
     echo "Choose your preferred code editor:"
-    echo "1. [Vscode] (https://code.visualstudio.com/) Microsoft Visual Studio Code."
-    echo "2. [Vscodium] (https://vscodium.com/) Libre version of Microsoft Visual Studio Code, but has less extensions to install."
-    echo "3. [Zed] (https://zed.dev) New and lighting fast text editor made in Rust."
-    echo "4. [NeoVim] (https://neovim.io/) Hyperextensible Vim-based text editor with NvChad (https://nvchad.com) config."
+    echo "  1. Visual Studio Code (https://code.visualstudio.com/)"
+    echo "  2. VSCodium (https://vscodium.com/)"
+    echo "  3. Zed (https://zed.dev)"
+    echo "  4. NeoVim+NvChad (https://neovim.io/ with NvChad https://nvchad.com)"
+    read -r -p "Enter the number of your preferred editor: " choice
 
-    read -r -p "Enter the number of your preferred editor: " editor_choice
-
-    case $editor_choice in
+    case "$choice" in
         1)
             sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
-            echo -e "[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | sudo tee /etc/yum.repos.d/vscode.repo > /dev/null
-            sudo dnf update -y && sudo dnf install code -y
+            echo -e "[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | sudo tee /etc/yum.repos.d/vscode.repo >/dev/null
+            sudo dnf upgrade --refresh -y && sudo dnf install code -y
             ;;
         2)
             sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
-            printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=download.vscodium.com\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h" | sudo tee -a /etc/yum.repos.d/vscodium.repo
-            sudo dnf update -y && sudo dnf install codium -y
+            printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=VSCodium Repository\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h\n" | sudo tee /etc/yum.repos.d/vscodium.repo
+            sudo dnf upgrade --refresh -y && sudo dnf install codium -y
             ;;
         3)
             curl -f https://zed.dev/install.sh | sh
             ;;
         4)
-            sudo dnf update -y && sudo dnf install neovim -y
-            git clone https://github.com/NvChad/starter ~/.config/nvim && nvim
+            sudo dnf upgrade --refresh -y && sudo dnf install neovim -y
+            git clone https://github.com/NvChad/starter ~/.config/nvim
+            nvim
             ;;
         *)
             echo "Invalid choice. No editor installed."
@@ -72,280 +90,250 @@ install_code_editor() {
 # Install the preferred browser.
 install_browser() {
     echo "Choose your preferred browser:"
-    echo "1. Librewolf: A custom version of Firefox, focused on privacy, security and freedom."
-    echo "   https://librewolf.net/"
-    echo "2. Chromium: UnGoogled version of the Chrome browser."
-    echo "   https://chromium.org/"
-    echo "3. Brave: Privacy respecting and ad blocking browser based of Chromium."
-    echo "   https://brave.com/"
+    echo "  1. Librewolf (https://librewolf.net/)"
+    echo "  2. Chromium (https://chromium.org/)"
+    echo "  3. Brave (https://brave.com/)"
+    read -r -p "Enter the number of your preferred browser: " choice
 
-    read -r -p "Enter the number of your preferred browser: " browser_choice
-
-    case $browser_choice in
+    case "$choice" in
         1)
-            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo
-            sudo dnf update -y && sudo dnf install librewolf -y
+            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
+            sudo dnf upgrade --refresh -y && sudo dnf install librewolf -y
             ;;
         2)
             sudo dnf install chromium -y
             ;;
         3)
-            sudo dnf config-manager --add-repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
-            sudo rpm --import https://brave-browser-rpm-release.s3.brave.com/brave-core.asc
-            sudo dnf install brave-browser -y
+            curl -fsS https://dl.brave.com/install.sh | sh
             ;;
         *)
-            echo "Invalid choice. Going with the default browser (Firefox)."
+            echo "Invalid choice. Using default (Firefox)."
             ;;
     esac
 }
 
-# Install communicating apps
+# Install communication apps.
 install_communication() {
-    echo "Choose your preferred communication app(s):"
-    echo "1. Discord: A popular communication platform for communities, including voice, video, and text chat."
-    echo "   https://discord.com/"
-    echo "2. Vesktop: A modified Discord client with plugin support and hardened privacy."
-    echo "   https://vencord.dev/"
-    echo "3. Element Desktop: A secure and private communication platform with end-to-end encryption."
-    echo "   https://element.io/"
-    echo "4. Telegram Desktop: A cloud-based messaging platform with a focus on security and speed."
-    echo "   https://telegram.org/"
-    echo "5. Signal Desktop: A private messaging app with end-to-end encryption and a focus on security."
-    echo "   https://signal.org/"
+    echo "Choose your communication app(s) (enter numbers separated by spaces):"
+    echo "  1. Discord (https://discord.com/)"
+    echo "  2. Vesktop (https://vencord.dev/)"
+    echo "  3. Element Desktop (https://element.io/)"
+    echo "  4. Telegram Desktop (https://telegram.org/)"
+    echo "  5. Signal Desktop (https://signal.org/)"
+    read -r -p "Your choices: " choices
 
-    read -r -p "Enter the number(s) of your preferred communication app(s), separated by spaces: " app_choice
-
-    for choice in $app_choice; do
-        case $choice in
-            1)
-                sudo dnf install discord -y
-                ;;
-            2)
-                flatpak install dev.vencord.Vesktop -y
-                ;;
-            3)
-                flatpak install im.riot.Riot -y
-                ;;
-            4)
-                sudo dnf install telegram-desktop -y
-                ;;
-            5)
-                flatpak install org.signal.Signal -y
-                ;;
-            *)
-                echo "Invalid choice: $choice"
-                ;;
+    for choice in $choices; do
+        case "$choice" in
+            1) sudo dnf install discord -y ;;
+            2) flatpak install -y flathub dev.vencord.Vesktop ;;
+            3) flatpak install -y flathub im.riot.Riot ;;
+            4) sudo dnf install telegram-desktop -y ;;
+            5) flatpak install -y flathub org.signal.Signal ;;
+            *) echo "Invalid choice: $choice" ;;
         esac
     done
 }
 
-# Add useful developer tools
+# Install useful developer tools.
 add_dev_tools() {
-    # TODO add more useful tools here...
-    # These are the only ones that I personally need
-    sudo dnf groupinstall "Development Tools" "Development Libraries" -y
+    # sudo dnf groupinstall "Development Tools" "Development Libraries" -y
     sudo dnf install kernel-devel android-tools python3-pip python3-devel git nodejs nodejs-npm -y
 }
 
-# Installs the Nvidia drivers if an Nvidia GPU is detected
+# Detect Nvidia GPU and offer driver installation.
 needs_nvidia() {
-    if lspci | grep -q NVIDIA; then
-        read -r -p "Nvidia GPU detected. Do you want to install Nvidia drivers (akmod-nvidia)? (y/N) " wants_nvidia
-        if [[ $wants_nvidia == "y" || $wants_nvidia == "Y" ]]; then
+    if lspci | grep -qi NVIDIA; then
+        read -r -p "Nvidia GPU detected. Install Nvidia drivers (akmod-nvidia)? (y/N) " resp
+        if [[ "$resp" =~ ^[yY]$ ]]; then
             sudo dnf install akmod-nvidia -y
-            echo "Done!"
+            echo "Nvidia drivers installed."
         else
-            echo "Skipping..."
+            echo "Skipping Nvidia driver installation."
         fi
     else
-        echo "System is not using Nvidia."
+        echo "No Nvidia GPU detected."
     fi
 }
 
-# Create hid_apple.conf and append options to fix bluetooth FN key problems
-# /etc/modprobe.d/hid_apple.conf
-# options hid_apple fnmode=0
+# Patch for Apple keyboards (hid_apple fn key).
 hid_apple_patch() {
-    # Create the hid_apple.conf file if it doesn't exist
-    if [ ! -f /etc/modprobe.d/hid_apple.conf ]; then
-        sudo touch /etc/modprobe.d/hid_apple.conf
+    local conf_file="/etc/modprobe.d/hid_apple.conf"
+    if [ ! -f "$conf_file" ]; then
+        sudo touch "$conf_file"
     fi
-
-    echo "options hid_apple fnmode=0" | sudo tee -a /etc/modprobe.d/hid_apple.conf
+    echo "options hid_apple fnmode=0" | sudo tee -a "$conf_file"
     sudo modprobe -r hid_apple
     sudo modprobe hid_apple
 }
 
-# Create flags.conf to /etc/dracut.conf.d/ to allow using bluetooth keyboard when decrypting
-# Added flags:
-# hostonly="yes"
-# add_dracutmodules+=" bluetooth "
+# Add dracut flags to support bluetooth keyboard during LUKS decryption.
 add_dracut_flags() {
-    # Create the flags.conf file if it doesn't exist
-    if [ ! -f /etc/dracut.conf.d/flags.conf ]; then
-        sudo touch /etc/dracut.conf.d/flags.conf
+    local flags_file="/etc/dracut.conf.d/flags.conf"
+    if [ ! -f "$flags_file" ]; then
+        sudo touch "$flags_file"
     fi
-
-    echo "hostonly=\"yes\"" | sudo tee -a /etc/dracut.conf.d/flags.conf
-    echo "add_dracutmodules+=\" bluetooth \"" | sudo tee -a /etc/dracut.conf.d/flags.conf
-
-    # Regenerate the initramfs to apply the changes
+    echo 'hostonly="yes"' | sudo tee -a "$flags_file"
+    echo 'add_dracutmodules+=" bluetooth "' | sudo tee -a "$flags_file"
     sudo dracut --regenerate-all --force --verbose
 }
 
-# Install tor, enable it and install tor launcher
+# Install Tor and enable its service.
 install_tor() {
     sudo dnf install tor torbrowser-launcher -y
-    sudo systemctl enable tor
+    sudo systemctl enable --now tor
 }
 
-# Install user specified software if any
+# Install extra software by trying DNF first then Flatpak.
 install_selection() {
-    for package in "$@"; do
-        if sudo dnf install -y "$package"; then
-            # Package installed successfully from DNF
-            echo "Package '$package' installed successfully from DNF."
+    for pkg in "$@"; do
+        if sudo dnf install -y "$pkg"; then
+            echo "Installed $pkg via DNF."
         else
-            echo "Not found from DNF, trying flatpak..."
+            echo "DNF did not find $pkg. Trying Flatpak from flathub..."
             sleep 1
-            if flatpak install -y "$package"; then
-                # Package installed successfully from Flatpak
-                echo "Package '$package' installed successfully from Flatpak."
+            if flatpak install -y flathub "$pkg"; then
+                echo "Installed $pkg via Flatpak."
             else
-                # Package not available in either DNF or Flatpak, print an error message
-                echo "Error: Package '$package' not found in DNF or Flatpak repositories."
+                echo "Error: $pkg not found in DNF or Flatpak repositories."
             fi
         fi
     done
 }
 
-# Install zsh and oh-my-zsh (https://ohmyz.sh/)
+# Install zsh and oh-my-zsh (runs oh-my-zsh installer as user).
 setup_shell() {
     echo "Installing zsh..."
     sudo dnf install zsh -y
-    echo "Running the oh-my-zsh setup script..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    echo "Running oh-my-zsh setup (this runs as the current user)..."
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" || true
 }
 
-
 # Main
-# ------------
 echo "FQS (Fedora Quick Start) Script"
-echo
-echo "Finish your post installation steps easily."
-echo
+echo "Finish your post-installation steps easily."
 echo "By Vili (https://vili.dev/)"
+echo "You will be prompted for sudo password as needed."
 echo
-echo "You will be asked for the sudo password!"
-echo
+
 read -r -p "Do you want to continue with this script? (y/N) " input
-if [[ $input == "y" ||  $input == "Y" ]]; then
-    echo "Starting with an system update & upgrade..."
+if [[ "$input" =~ ^[yY]$ ]]; then
+    echo "Starting system upgrade..."
     sleep 2
     sys_update
-    echo "Done!"
+    echo "System upgrade complete."
     echo
-    echo "Now enabling RPM Fusion repos..."
+
+    echo "Enabling RPM Fusion repositories..."
     sleep 2
     add_rpm_repos
-    echo "Done!"
+    echo "RPM Fusion enabled."
     echo
-    echo "Now enabling flathub repos..."
+
+    echo "Enabling Flathub repository..."
     sleep 2
     add_flatpak_repos
-    echo "Done!"
+    echo "Flathub enabled."
     echo
-    echo "Now speeding up dnf..."
+
+    echo "Optimizing DNF configuration..."
     sleep 2
     append_dnf_configs
-    echo "Done!"
+    echo "DNF configuration updated."
     echo
-    echo "Checking if you are using a Nvidia GPU..."
+
+    echo "Checking for Nvidia GPU..."
     sleep 2
     needs_nvidia
     echo
-    echo "Now comes the user selections, read and answer carefully!"
+
+    echo "Proceeding with user selections..."
     sleep 2
-    echo
-    read -r -p "If you use a bluetooth keyboard and your fn key doesn't work correctly (hid_apple fnmode), do you want to patch that? (y/N) " wants_hidapple_patch
-    if [[ $wants_hidapple_patch == "y" || $wants_hidapple_patch == "Y" ]]; then
+
+    read -r -p "Patch Bluetooth keyboard FN key (hid_apple)? (y/N) " patch_hid
+    if [[ "$patch_hid" =~ ^[yY]$ ]]; then
         hid_apple_patch
-        echo "Done!"
+        echo "hid_apple patch applied."
     else
-        echo "Skipping hid_apple patching..."
+        echo "Skipping hid_apple patch."
     fi
     echo
-    sleep 1
-    read -r -p "If you use a bluetooth keyboard, do you want to allow bluetooth keyboard usage during the device decryption? This will regenerate initramfs with the new flags. (y/N) " wants_dracut_patch
-    if [[ $wants_dracut_patch == "y" || $wants_dracut_patch == "Y" ]]; then
+
+    read -r -p "Allow Bluetooth keyboard during decryption (regenerate initramfs)? (y/N) " patch_dracut
+    if [[ "$patch_dracut" =~ ^[yY]$ ]]; then
         add_dracut_flags
-        echo "Done!"
+        echo "Dracut flags added."
     else
-        echo "Skipping adding dracut flags..."
+        echo "Skipping dracut flags."
     fi
-    sleep 1
-    read -r -p "Do you want to install a different browser, instead of using the default one (Firefox)? (y/N) " wants_browser
-    if [[ $wants_browser == "y" || $wants_browser == "Y" ]]; then
+    echo
+
+    read -r -p "Install an alternative browser (not Firefox)? (y/N) " browser_choice
+    if [[ "$browser_choice" =~ ^[yY]$ ]]; then
         install_browser
-        echo "Done!"
+        echo "Browser installation complete."
     else
-        echo "Going with the default browser..."
+        echo "Default browser (Firefox) will be used."
     fi
     echo
-    read -r -p "Do you want to install any communication apps? (y/N) " wants_communication
-    if [[ $wants_communication == "y" || $wants_communication == "Y" ]]; then
+
+    read -r -p "Install communication apps? (y/N) " comm_choice
+    if [[ "$comm_choice" =~ ^[yY]$ ]]; then
         install_communication
-        echo "Done!"
+        echo "Communication apps installed."
     else
-        echo "Skipping installing communication apps..."
+        echo "Skipping communication apps."
     fi
     echo
-    read -r -p "Do you want to install a code editor? (y/N) " wants_code_editor
-    if [[ $wants_code_editor == "y" || $wants_code_editor == "Y" ]]; then
+
+    read -r -p "Install a code editor? (y/N) " editor_choice
+    if [[ "$editor_choice" =~ ^[yY]$ ]]; then
         install_code_editor
-        echo "Done!"
+        echo "Code editor installation complete."
     else
-        echo "Skipping code editor installation..."
+        echo "Skipping code editor installation."
     fi
     echo
-    read -r -p "Do you want to install useful development tools, such as git, android-tools, nodejs, npm, python3-pip..? (y/N) " wants_dev_tools
-    if [[ $wants_dev_tools == "y" || $wants_dev_tools == "Y" ]]; then
+
+    read -r -p "Install developer tools (git, nodejs, etc.)? (y/N) " dev_choice
+    if [[ "$dev_choice" =~ ^[yY]$ ]]; then
         add_dev_tools
-        echo "Done!"
+        echo "Developer tools installed."
     else
-        echo "Skipping devtools installation..."
+        echo "Skipping developer tools."
     fi
     echo
-    read -r -p "Do you want to install tor, torbrowser and enable the tor service? (y/N) " wants_tor
-    if [[ $wants_tor == "y" || $wants_tor == "Y" ]]; then
+
+    read -r -p "Install Tor and enable Tor service? (y/N) " tor_choice
+    if [[ "$tor_choice" =~ ^[yY]$ ]]; then
         install_tor
-        echo "Done!"
+        echo "Tor installed and enabled."
     else
-        echo "Skipping tor installation..."
+        echo "Skipping Tor installation."
     fi
     echo
-    read -r -p "Do you want to install anything else? (y/N) " extra_installs
-    if [[ $extra_installs == "y" || $extra_installs == "Y" ]]; then
-        read -r -p "Alright, what do you want to install? (separated by spaces, for example 'discord spotify gimp') " software
-        echo "Installing $software..."
-        install_selection "$software"
-        echo "Done!"
+
+    read -r -p "Install additional software packages (e.g. 'discord spotify gimp')? (y/N) " extra_choice
+    if [[ "$extra_choice" =~ ^[yY]$ ]]; then
+        read -r -p "Enter package names (space-separated): " pkg_list
+        echo "Installing: $pkg_list"
+        install_selection $pkg_list
+        echo "Optional software installation complete."
         sleep 1
     else
-        echo "Skipping optional software installation..."
+        echo "Skipping optional software installation."
     fi
     echo
-    read -r -p "Lastly, do you want to install and setup a better shell? (zsh with oh-my-zsh framework) (y/N) " wants_shell
-    if [[ $wants_shell == "y" || $wants_shell == "Y" ]]; then
-        echo "Installing zsh and oh-my-zsh..."
+
+    read -r -p "Install and set up a better shell (zsh with oh-my-zsh)? (y/N) " shell_choice
+    if [[ "$shell_choice" =~ ^[yY]$ ]]; then
+        echo "Installing zsh and configuring oh-my-zsh..."
         sleep 2
         setup_shell
-        echo "Done!"
+        echo "Shell setup complete."
     else
-        echo "Skipping better shell setup..."
-        echo "This was the last step, goodbye!"
+        echo "Skipping shell setup."
     fi
+    echo "All steps complete. Goodbye!"
 else
-    echo "Cancelled, Goodbye!"
+    echo "Script cancelled. Goodbye!"
 fi
