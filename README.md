@@ -11,7 +11,7 @@ Steps the script does:
 5. Installs Nvidia drivers if an Nvidia GPU is detected.
 6. Patches bluetooth and keyboard settings.
 7. Installs a list of user-specified software.
-8. Sets up zsh shell with oh-my-zsh.
+8. Installs a custom Bash prompt.
 
 all steps require user confirmation, so you can choose yourself what to do.
 
