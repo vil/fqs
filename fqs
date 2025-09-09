@@ -227,18 +227,19 @@ install_selection() {
     IFS="$oldIFS"
 }
 
-# Install zsh and oh-my-zsh (runs oh-my-zsh installer as user).
-setup_shell() {
-    echo "Installing zsh..."
-    sudo dnf install zsh -y
-    echo "Running oh-my-zsh setup (this runs as the current user)..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" || true
+# Install a custom bash prompt.
+setup_bash_prompt() {
+    tee -a "$HOME/.bashrc" >/dev/null <<'EOF'
+# Vili's Bash prompt
+PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)'
+PS1='\[\e[2m\]\t\[\e[0m\] ${PS1_CMD1} \$ '
+EOF
 }
 
 # Main
 echo "FQS (Fedora Quick Start) Script"
 echo "Finish your post-installation steps easily."
-echo "By Vili (https://vili.dev/)"
+echo "By Vili (https://vili.dev)"
 echo "You will be prompted for sudo password as needed."
 echo
 
@@ -343,7 +344,7 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     if [[ "$extra_choice" =~ ^[yY]$ ]]; then
         read -r -p "Enter package names (space-separated): " pkg_list
         echo "Installing: $pkg_list"
-        install_selection $pkg_list
+        install_selection "$pkg_list"
         echo "Optional software installation complete."
         sleep 1
     else
@@ -351,16 +352,16 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     fi
     echo
 
-    read -r -p "Install and set up a better shell (zsh with oh-my-zsh)? (y/N) " shell_choice
-    if [[ "$shell_choice" =~ ^[yY]$ ]]; then
-        echo "Installing zsh and configuring oh-my-zsh..."
+    read -r -p "Install my simple and clean Bash prompt: 'CLOCK GIT_BRANCH $ '? (y/N) " bash_prompt_choice
+    if [[ "$bash_prompt_choice" =~ ^[yY]$ ]]; then
+        echo "Applying the custom Bash prompt..."
         sleep 2
-        setup_shell
-        echo "Shell setup complete."
+        setup_bash_prompt
+        echo "Bash prompt set!"
     else
-        echo "Skipping shell setup."
+        echo "Skipping Bash prompt setup."
     fi
-    echo "All steps complete. Goodbye!"
+    echo "All steps complete, remember to star this on GitHub. Goodbye!"
 else
     echo "Script cancelled. Goodbye!"
 fi
