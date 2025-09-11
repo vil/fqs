@@ -206,7 +206,7 @@ install_selection() {
     # Save the current IFS and temporarily set it to a space for word splitting.
     oldIFS="$IFS"
     IFS=' '
-    for pkg in $*; do
+    for pkg in $('$*'); do
         if rpm -q "$pkg" &>/dev/null; then
             echo "$pkg is already installed."
         else
@@ -231,8 +231,8 @@ install_selection() {
 setup_bash_prompt() {
     tee -a "$HOME/.bashrc" >/dev/null <<'EOF'
 # Vili's Bash prompt
-PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)'
-PS1='\[\e[2m\]\t\[\e[0m\] ${PS1_CMD1} \$ '
+PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)' 
+PS1='\[\e[2m\]\t\[\e[0m\] \w ${PS1_CMD1} \$ '
 EOF
 }
 
