@@ -352,7 +352,7 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     fi
     echo
 
-    read -r -p "Install my simple and clean Bash prompt: 'CLOCK GIT_BRANCH $ '? (y/N) " bash_prompt_choice
+    read -r -p "Install my simple and clean Bash prompt: 'CLOCK WORKING_DIR GIT_BRANCH $ '? (y/N) " bash_prompt_choice
     if [[ "$bash_prompt_choice" =~ ^[yY]$ ]]; then
         echo "Applying the custom Bash prompt..."
         sleep 2
