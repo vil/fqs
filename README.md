@@ -1,17 +1,20 @@
 # fqs
-Fedora Quick Start, a script to finish your post-installation steps easily.
+Fedora Quick Start, a script to finish your post-installation and hardening steps easily.
 
 <img src="real+fax.jpeg" width=550px height=350px>
 
 Steps the script does:
 1. Updates and upgrades the system.
-2. Enables RPM Fusion repositories for additional software.
-3. Enables Flathub repositories for flatpak packages.
-4. Configures dnf to speed up package management.
-5. Installs Nvidia drivers if an Nvidia GPU is detected.
-6. Patches bluetooth and keyboard settings.
-7. Installs a list of user-specified software.
-8. Installs a custom Bash prompt.
+2. Setup automatic updates using dnf-automatic.
+3. Enables RPM Fusion repositories for additional software.
+4. Enables Flathub repositories for flatpak packages.
+5. Configures dnf to speed up package management.
+6. Installs Nvidia drivers if an Nvidia GPU is detected.
+7. Patches bluetooth and keyboard settings.
+8. Installs a list of user-specified software.
+9. Installs a custom Bash prompt.
+
+and most importantly, applies some **hardening** for your system.
 
 all steps require user confirmation, so you can choose yourself what to do.
 

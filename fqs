@@ -53,6 +53,67 @@ EOF
     sudo dnf upgrade --refresh -y
 }
 
+# Setup automatic updates (DNF-automatic).
+setup_auto_updates() {
+    sudo dnf install -y dnf-automatic
+
+    # check if config file exists
+    local conf_file="/etc/dnf/dnf5-plugins/automatic.conf"
+    if [ ! -f "$conf_file" ]; then
+        sudo touch "$conf_file"
+        # append or modify settings
+        sudo tee -a "$conf_file" >/dev/null <<'EOF'
+[commands]
+apply_updates=True
+upgrade_type=security
+reboot=when-needed
+EOF
+    fi
+
+    sudo systemctl enable --now dnf-automatic.timer
+}
+
+# Hardening
+sys_hardening() {
+    # Install usbguard
+    echo Installing usbguard for USB device control...
+    sudo dnf install -y usbguard usbguard-notifier
+    # Generate config for current hardware
+    sudo usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
+    # Enable and start the service
+    sudo systemctl enable --now usbguard
+
+    # Enable MAC address randomization for Wi-Fi
+    echo Enabling MAC address randomization for Wi-Fi...
+    local network_file="/etc/NetworkManager/conf.d/00-macrandomize.conf"
+    if [ ! -f "$network_file" ]; then
+        sudo touch "$network_file"
+    fi
+    if ! grep -q "wifi.scan-rand-mac-address=yes" "$network_file"; then
+        echo -e "[network]\nwifi.cloned-mac-address = random" | sudo tee -a "$network_file" >/dev/null
+        sudo systemctl restart NetworkManager
+    fi
+
+    # Some sysctl hardening settings
+    echo Applying sysctl hardening settings...
+    local sysctl_file="/etc/sysctl.d/99-hardening.conf"
+
+    if [ ! -f "$sysctl_file" ]; then
+        sudo touch "$sysctl_file"
+    fi
+    sudo tee -a "$sysctl_file" >/dev/null <<'EOF'
+# Disable IP forwarding
+net.ipv4.ip_forward = 0
+# Kernel VA Space Protection
+kernel.randomize_va_space = 2
+# Ignore ICMP broadcast requests
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+# SUID Dumpable disabled
+fs.suid_dumpable = 0
+EOF
+    sudo sysctl --system
+}
+
 # Install the preferred code editor.
 install_code_editor() {
     echo "Choose your preferred code editor:"
@@ -206,7 +267,7 @@ install_selection() {
     # Save the current IFS and temporarily set it to a space for word splitting.
     oldIFS="$IFS"
     IFS=' '
-    for pkg in $('$*'); do
+    for pkg in "$@"; do
         if rpm -q "$pkg" &>/dev/null; then
             echo "$pkg is already installed."
         else
@@ -236,7 +297,7 @@ PS1='\[\e[2m\]\t\[\e[0m\] \w ${PS1_CMD1} \$ '
 EOF
 }
 
-# Main
+# ======== Main =========
 echo "FQS (Fedora Quick Start) Script"
 echo "Finish your post-installation steps easily."
 echo "By Vili (https://vili.dev)"
@@ -276,6 +337,15 @@ if [[ "$input" =~ ^[yY]$ ]]; then
 
     echo "Proceeding with user selections..."
     sleep 2
+
+    read -r -p "Setup automatic updates (DNF-automatic)? (y/N) " auto_update
+    if [[ "$auto_update" =~ ^[yY]$ ]]; then
+        setup_auto_updates
+        echo "Automatic updates enabled."
+    else
+        echo "Skipping automatic updates setup."
+    fi
+    echo
 
     read -r -p "Patch Bluetooth keyboard FN key (hid_apple)? (y/N) " patch_hid
     if [[ "$patch_hid" =~ ^[yY]$ ]]; then
@@ -361,6 +431,18 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     else
         echo "Skipping Bash prompt setup."
     fi
+    echo
+
+    read -r -p "Apply some system hardening (usbguard, sysctl settings, MAC randomization)? (y/N) " harden_choice
+    if [[ "$harden_choice" =~ ^[yY]$ ]]; then
+        echo "Applying system hardening..."
+        sleep 2
+        sys_hardening
+        echo "System hardening applied."
+    else
+        echo "Skipping system hardening."
+    fi
+
     echo "All steps complete, remember to star this on GitHub. Goodbye!"
 else
     echo "Script cancelled. Goodbye!"
