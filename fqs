@@ -114,6 +114,30 @@ EOF
     sudo sysctl --system
 }
 
+# VPN App installation
+install_vpn_app() {
+    echo "Choose your preferred VPN app:"
+    echo "  1. IVPN (https://ivpn.net/)"
+    echo "  2. Mullvad (https://mullvad.net/)"
+    read -r -p "Enter the number of your preferred VPN app: " choice
+
+    case "$choice" in
+        1)
+            sudo dnf config-manager addrepo --from-repofile=https://repo.ivpn.net/stable/fedora/generic/ivpn.repo
+            sudo dnf upgrade --refresh -y
+            sudo dnf install -y iptables-legacy ivpn-ui
+            ;;
+        2)
+            sudo dnf config-manager addrepo --from-repofile=https://repository.mullvad.net/rpm/stable/mullvad.repo
+            sudo dnf upgrade --refresh -y
+            sudo dnf install -y mullvad-vpn
+            ;;
+        *)
+            echo "Invalid choice. No VPN app installed."
+            ;;
+    esac
+}
+
 # Install the preferred code editor.
 install_code_editor() {
     echo "Choose your preferred code editor:"
@@ -362,6 +386,15 @@ if [[ "$input" =~ ^[yY]$ ]]; then
         echo "Dracut flags added."
     else
         echo "Skipping dracut flags."
+    fi
+    echo
+
+    read -r -p "Install a trusted VPN app? (y/N) " vpn_choice
+    if [[ "$vpn_choice" =~ ^[yY]$ ]]; then
+        install_vpn_app
+        echo "VPN app installation complete."
+    else
+        echo "Skipping VPN app installation."
     fi
     echo
 

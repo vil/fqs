@@ -11,10 +11,10 @@ Steps the script does:
 5. Configures dnf to speed up package management.
 6. Installs Nvidia drivers if an Nvidia GPU is detected.
 7. Patches bluetooth and keyboard settings.
-8. Installs a list of user-specified software.
-9. Installs a custom Bash prompt.
-
-and most importantly, applies some **hardening** for your system.
+8. Installs a trusted VPN app.
+9. Installs a list of user-specified software.
+10. Installs a custom Bash prompt.
+11. and most importantly, applies some **hardening** for your system.
 
 all steps require user confirmation, so you can choose yourself what to do.
 
