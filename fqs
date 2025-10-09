@@ -90,7 +90,14 @@ sys_hardening() {
         sudo touch "$network_file"
     fi
     if ! grep -q "wifi.scan-rand-mac-address=yes" "$network_file"; then
-        echo -e "[network]\nwifi.cloned-mac-address = random" | sudo tee -a "$network_file" >/dev/null
+        sudo tee -a "$network_file" >/dev/null <<'EOF'
+[device]
+wifi.scan-rand-mac-address=yes
+
+[connection]
+wifi.cloned-mac-address=random
+ethernet.cloned-mac-address=random
+EOF
         sudo systemctl restart NetworkManager
     fi
 
