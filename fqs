@@ -58,10 +58,10 @@ setup_auto_updates() {
     sudo dnf install -y dnf-automatic
 
     # check if config file exists
-    local conf_file="/etc/dnf/dnf5-plugins/automatic.conf"
+    local conf_file="/etc/dnf/automatic.conf"
     if [ ! -f "$conf_file" ]; then
         sudo touch "$conf_file"
-        # append or modify settings
+        # append config
         sudo tee -a "$conf_file" >/dev/null <<'EOF'
 [commands]
 apply_updates=True
