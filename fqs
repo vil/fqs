@@ -148,17 +148,14 @@ install_vpn_app() {
 # Install the preferred code editor.
 install_code_editor() {
     echo "Choose your preferred code editor:"
-    echo "  1. Visual Studio Code (https://code.visualstudio.com/)"
+    echo "  1. Zed (https://zed.dev)"
     echo "  2. VSCodium (https://vscodium.com/)"
-    echo "  3. Zed (https://zed.dev)"
-    echo "  4. NeoVim+NvChad (https://neovim.io/ with NvChad https://nvchad.com)"
+    echo "  3. NeoVim+NvChad (https://neovim.io/ with NvChad https://nvchad.com)"
     read -r -p "Enter the number of your preferred editor: " choice
 
     case "$choice" in
         1)
-            sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
-            echo -e "[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | sudo tee /etc/yum.repos.d/vscode.repo >/dev/null
-            sudo dnf upgrade --refresh -y && sudo dnf install code -y
+            curl -f https://zed.dev/install.sh | sh
             ;;
         2)
             sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
@@ -166,9 +163,6 @@ install_code_editor() {
             sudo dnf upgrade --refresh -y && sudo dnf install codium -y
             ;;
         3)
-            curl -f https://zed.dev/install.sh | sh
-            ;;
-        4)
             sudo dnf upgrade --refresh -y && sudo dnf install neovim -y
             git clone https://github.com/NvChad/starter ~/.config/nvim
             nvim
@@ -182,21 +176,21 @@ install_code_editor() {
 # Install the preferred browser.
 install_browser() {
     echo "Choose your preferred browser:"
-    echo "  1. Librewolf (https://librewolf.net/)"
-    echo "  2. Chromium (https://chromium.org/)"
-    echo "  3. Brave (https://brave.com/)"
+    echo "  1. Brave (https://brave.com/)"
+    echo "  2. Librewolf (https://librewolf.net/)"
+    echo "  3. Chromium (https://chromium.org/)"
     read -r -p "Enter the number of your preferred browser: " choice
 
     case "$choice" in
         1)
+            curl -fsS https://dl.brave.com/install.sh | sh
+            ;;
+        2)
             curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
             sudo dnf upgrade --refresh -y && sudo dnf install librewolf -y
             ;;
-        2)
-            sudo dnf install chromium -y
-            ;;
         3)
-            curl -fsS https://dl.brave.com/install.sh | sh
+            sudo dnf install chromium -y
             ;;
         *)
             echo "Invalid choice. Using default (Firefox)."
@@ -212,7 +206,7 @@ install_communication() {
     echo "  3. Element Desktop (https://element.io/)"
     echo "  4. Telegram Desktop (https://telegram.org/)"
     echo "  5. Signal Desktop (https://signal.org/)"
-    
+
     # Temporarily set IFS to include spaces
     local oldIFS=$IFS
     IFS=' '
@@ -323,7 +317,7 @@ install_selection() {
 setup_bash_prompt() {
     tee -a "$HOME/.bashrc" >/dev/null <<'EOF'
 # Vili's Bash prompt
-PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)' 
+PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)'
 PS1='\[\e[2m\]\t\[\e[0m\] \w ${PS1_CMD1} \$ '
 EOF
 }
