@@ -203,44 +203,44 @@ install_browser() {
     esac
 }
 
-# Install communication apps.
-install_communication() {
-    echo "Choose your communication app(s) (enter numbers separated by spaces):"
-    echo "  1. Discord (https://discord.com/)"
-    echo "  2. Vesktop (https://vencord.dev/)"
-    echo "  3. Element Desktop (https://element.io/)"
-    echo "  4. Telegram Desktop (https://telegram.org/)"
-    echo "  5. Signal Desktop (https://signal.org/)"
+# # Install communication apps.
+# install_communication() {
+#     echo "Choose your communication app(s) (enter numbers separated by spaces):"
+#     echo "  1. Discord (https://discord.com/)"
+#     echo "  2. Vesktop (https://vencord.dev/)"
+#     echo "  3. Element Desktop (https://element.io/)"
+#     echo "  4. Telegram Desktop (https://telegram.org/)"
+#     echo "  5. Signal Desktop (https://signal.org/)"
 
-    # Temporarily set IFS to include spaces
-    local oldIFS=$IFS
-    IFS=' '
-    read -ra choices -p "Your choices: "
-    IFS=$oldIFS
+#     # Temporarily set IFS to include spaces
+#     local oldIFS=$IFS
+#     IFS=' '
+#     read -ra choices -p "Your choices: "
+#     IFS=$oldIFS
 
-    for choice in "${choices[@]}"; do
-        case "$choice" in
-            1)
-                sudo dnf install discord -y
-                ;;
-            2)
-                flatpak install -y flathub dev.vencord.Vesktop
-                ;;
-            3)
-                flatpak install -y flathub im.riot.Riot
-                ;;
-            4)
-                sudo dnf install telegram-desktop -y
-                ;;
-            5)
-                flatpak install -y flathub org.signal.Signal
-                ;;
-            *)
-                echo "Invalid choice: $choice"
-                ;;
-        esac
-    done
-}
+#     for choice in "${choices[@]}"; do
+#         case "$choice" in
+#             1)
+#                 sudo dnf install discord -y
+#                 ;;
+#             2)
+#                 flatpak install -y flathub dev.vencord.Vesktop
+#                 ;;
+#             3)
+#                 flatpak install -y flathub im.riot.Riot
+#                 ;;
+#             4)
+#                 sudo dnf install telegram-desktop -y
+#                 ;;
+#             5)
+#                 flatpak install -y flathub org.signal.Signal
+#                 ;;
+#             *)
+#                 echo "Invalid choice: $choice"
+#                 ;;
+#         esac
+#     done
+# }
 
 # Install useful developer tools.
 add_dev_tools() {
@@ -413,14 +413,14 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     fi
     echo
 
-    read -r -p "Install communication apps? (y/N) " comm_choice
-    if [[ "$comm_choice" =~ ^[yY]$ ]]; then
-        install_communication
-        echo "Communication apps installed."
-    else
-        echo "Skipping communication apps."
-    fi
-    echo
+    # read -r -p "Install communication apps? (y/N) " comm_choice
+    # if [[ "$comm_choice" =~ ^[yY]$ ]]; then
+    #     install_communication
+    #     echo "Communication apps installed."
+    # else
+    #     echo "Skipping communication apps."
+    # fi
+    # echo
 
     read -r -p "Install a code editor? (y/N) " editor_choice
     if [[ "$editor_choice" =~ ^[yY]$ ]]; then
