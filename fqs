@@ -170,7 +170,7 @@ install_code_editor() {
         3)
             sudo dnf upgrade --refresh -y && sudo dnf install neovim -y
             git clone https://github.com/NvChad/starter ~/.config/nvim
-            nvim
+            echo "NvChad will be installed once you start NeoVim for the first time..!"
             ;;
         *)
             echo "Invalid choice. No editor installed."
@@ -330,7 +330,7 @@ EOF
 # ======== Main =========
 echo "FQS (Fedora Quick Start) Script"
 echo "Finish your post-installation steps easily."
-echo "By Vili (https://vili.dev)"
+echo "By Vili (@vil)"
 echo "You will be prompted for sudo password as needed."
 echo
 
