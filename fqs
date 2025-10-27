@@ -64,9 +64,14 @@ setup_auto_updates() {
         # append config
         sudo tee -a "$conf_file" >/dev/null <<'EOF'
 [commands]
-apply_updates=True
-upgrade_type=security
-reboot=when-needed
+upgrade_type = security
+random_sleep = 0
+download_updates = yes
+apply_updates = yes
+
+[emitters]
+emit_via = stdio
+
 EOF
     fi
 
