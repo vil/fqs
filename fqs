@@ -222,7 +222,7 @@ install_winboat() {
     echo "Installing and setuping WinBoat, make sure you have virtualization enabled in your BIOS..."
     sudo dnf install docker docker-compose freerdp.x86_64 -y
     sudo groupadd docker
-    sudo usermod -aG docker $USER
+    sudo usermod -aG docker "$USER"
     echo -e "ip_tables\niptable_nat" | sudo tee /etc/modules-load.d/iptables.conf
     echo "Getting and installing the WinBoat RPM file..."
     curl -s https://api.github.com/repos/TibixDev/winboat/releases/latest | grep -oP '"browser_download_url": "\K[^"]*\.rpm' | head -1 | xargs curl -L -o /tmp/winboat.rpm
