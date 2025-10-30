@@ -217,6 +217,18 @@ install_browser() {
     esac
 }
 
+# Install and setup winboat.app
+install_winboat() {
+    echo "Installing and setuping WinBoat, make sure you have virtualization enabled in your BIOS..."
+    sudo dnf install docker docker-compose freerdp.x86_64 -y
+    sudo groupadd docker
+    sudo usermod -aG docker $USER
+    echo -e "ip_tables\niptable_nat" | sudo tee /etc/modules-load.d/iptables.conf
+    echo "Getting and installing the WinBoat RPM file..."
+    curl -s https://api.github.com/repos/TibixDev/winboat/releases/latest | grep -oP '"browser_download_url": "\K[^"]*\.rpm' | head -1 | xargs curl -L -o /tmp/winboat.rpm
+    sudo dnf install /tmp/winboat.rpm
+}
+
 # # Install communication apps.
 # install_communication() {
 #     echo "Choose your communication app(s) (enter numbers separated by spaces):"
@@ -345,7 +357,10 @@ EOF
 echo "FQS (Fedora Quick Start) Script"
 echo "Finish your post-installation steps easily."
 echo "By Vili (@vil)"
+echo
 echo "You will be prompted for sudo password as needed."
+echo
+echo "ALWAYS VERIFY THE SCRIPTS THAT YOU'RE RUNNING, INCLUDING THIS ONE, NEVER TRUST ANYONE ON THE INTERNET!"
 echo
 
 read -r -p "Do you want to continue with this script? (y/N) " input
@@ -451,6 +466,15 @@ if [[ "$input" =~ ^[yY]$ ]]; then
         echo "Developer tools installed."
     else
         echo "Skipping developer tools."
+    fi
+    echo
+
+    read -r -p "Install and setup WinBoat to run Windows apps with seamless integration? (y/N) " winboat_choice
+    if [[ "$winboat_choice" =~ ^[yY]$ ]]; then
+        install_winboat
+        echo "WinBoat installed, reboot may be necessary after this script has done running!"
+    else
+        echo "Skipping WinBoat setup."
     fi
     echo
 

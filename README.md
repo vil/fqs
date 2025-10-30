@@ -13,9 +13,10 @@ Steps the script does:
 7. Patches bluetooth and keyboard settings.
 8. Installs a trusted VPN app.
 9. Installs a list of user-specified software.
-10. Installs a custom Bash prompt.
-11. Applies some **hardening** for your system.
-12. Create and enroll Secure Boot keys.
+10. Install WinBoat for Windows app support.
+11. Installs a custom Bash prompt.
+12. Applies some **hardening** for your system.
+13. Create and enroll Secure Boot keys.
 
 all steps require user confirmation, so you can choose yourself what to do.
 
