@@ -14,7 +14,8 @@ Steps the script does:
 8. Installs a trusted VPN app.
 9. Installs a list of user-specified software.
 10. Installs a custom Bash prompt.
-11. and most importantly, applies some **hardening** for your system.
+11. Applies some **hardening** for your system.
+12. Create and enroll Secure Boot keys.
 
 all steps require user confirmation, so you can choose yourself what to do.
 

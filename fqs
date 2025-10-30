@@ -126,6 +126,20 @@ EOF
     sudo sysctl --system
 }
 
+# Enroll and setup secure boot
+enroll_secureboot() {
+    # Installing sbctl
+    sudo dnf copr enable chenxiaolong/sbctl
+    sudo dnf upgrade --refresh -y
+    sudo dnf install sbctl -y
+
+    # Enroll and create keys
+    echo "Creating keys..."
+    sudo sbctl create-keys
+    echo "Enrolling keys..."
+    sudo sbctl enroll-keys -m
+}
+
 # VPN App installation
 install_vpn_app() {
     echo "Choose your preferred VPN app:"
@@ -245,7 +259,7 @@ install_browser() {
 # Install useful developer tools.
 add_dev_tools() {
     # sudo dnf groupinstall "Development Tools" "Development Libraries" -y
-    sudo dnf install kernel-devel android-tools python3-pip python3-devel git nodejs nodejs-npm -y
+    sudo dnf install kernel-devel android-tools python3-pip python3-devel git nodejs nodejs-npm golang -y
 }
 
 # Detect Nvidia GPU and offer driver installation.
@@ -480,6 +494,16 @@ if [[ "$input" =~ ^[yY]$ ]]; then
         echo "System hardening applied."
     else
         echo "Skipping system hardening."
+    fi
+
+    read -r -p "Enable and enroll Secure Boot? (y/N) " enroll_sb
+    if [[ "$enroll_sb" =~ ^[yY]$ ]]; then
+        echo "Enabling and enrolling Secure Boot keys..."
+        sleep 2
+        enroll_secureboot
+        echo "Done, restart your system to apply and verify the keys by running 'sbctl status'..!"
+    else
+        echo "Skipping Secure Boot setup..."
     fi
 
     echo "All steps complete, remember to star this on GitHub. Goodbye!"
