@@ -203,6 +203,14 @@ install_browser() {
     case "$choice" in
         1)
             curl -fsS https://dl.brave.com/install.sh | sh
+            echo
+            echo
+            read -r -p "Now that you have Brave installed, do you want to debloat it as well? (Disable Tor, VPN, AI, Rewards.) (y/N) " debloat
+            if [[ "$debloat" =~ ^[yY]$ ]]; then
+                debloat_brave
+            else
+                echo "Skipping Brave debloat step."
+            fi
             ;;
         2)
             curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
@@ -215,6 +223,26 @@ install_browser() {
             echo "Invalid choice. Using default (Firefox)."
             ;;
     esac
+}
+
+# Brave debloating
+debloat_brave() {
+    echo "Creating policies..."
+    sudo mkdir -p /etc/brave/policies/recommended/
+    local debloat_policies="/etc/brave/policies/recommended/debloat.json"
+
+    if [ ! -f "$debloat_policies" ]; then
+        sudo touch "$debloat_policies"
+    fi
+    sudo tee -a "$debloat_policies" >/dev/null <<'EOF'
+{
+    "BraveRewardsDisabled": true,
+    "BraveWalletDisabled": true,
+    "BraveVPNDisabled": true,
+    "BraveAIChatEnabled": false,
+    "TorDisabled": true
+}
+EOF
 }
 
 # Install and setup winboat.app
