@@ -228,8 +228,8 @@ install_browser() {
 # Brave debloating
 debloat_brave() {
     echo "Creating policies..."
-    sudo mkdir -p /etc/brave/policies/recommended/
-    local debloat_policies="/etc/brave/policies/recommended/debloat.json"
+    sudo mkdir -p /etc/brave/policies/managed/
+    local debloat_policies="/etc/brave/policies/managed/debloat.json"
 
     if [ ! -f "$debloat_policies" ]; then
         sudo touch "$debloat_policies"
