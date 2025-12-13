@@ -10,13 +10,15 @@ Steps the script does:
 4. Enables Flathub repositories for flatpak packages.
 5. Configures dnf to speed up package management.
 6. Installs Nvidia drivers if an Nvidia GPU is detected.
-7. Patches bluetooth and keyboard settings.
-8. Installs a trusted VPN app.
-9. Installs a list of user-specified software.
-10. Install WinBoat for Windows app support.
-11. Installs a custom Bash prompt.
-12. Applies some **hardening** for your system.
-13. Create and enroll Secure Boot keys.
+7. Installs Steam with Proton-GE.
+8. Patches bluetooth and keyboard settings.
+9. Installs a trusted VPN app.
+10. Installs a list of user-specified software.
+11. Install WinBoat for Windows app support.
+12. Installs a custom Bash prompt.
+13. Generates SSH keys and creates Git config.
+14. Applies some **hardening** for your system.
+15. Create and enroll Secure Boot keys.
 
 all steps require user confirmation, so you can choose yourself what to do.
 

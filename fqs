@@ -389,6 +389,20 @@ PS1='\[\e[2m\]\t\[\e[0m\] \w ${PS1_CMD1} \$ '
 EOF
 }
 
+# Setup SSH-keys and .gitconfig
+setup_config() {
+    if ! command_exists git; then
+        echo "Git is not installed... Installing it now."
+        sudo dnf install git -y
+    fi
+    echo "Running ssh-keygen first... Please answer the following questions:"
+    ssh-keygen
+    read -r -p "Enter your name for Git: " name
+    git config --global user.name "$name"
+    read -r -p "Enter your e-mail for Git: " email
+    git config --global user.email "$email"
+}
+
 # ======== Main =========
 echo "FQS (Fedora Quick Start) Script"
 echo "Finish your post-installation steps easily."
@@ -511,6 +525,15 @@ if [[ "$input" =~ ^[yY]$ ]]; then
         echo "Developer tools installed."
     else
         echo "Skipping developer tools."
+    fi
+    echo
+
+    read -r -p "Generate SSH keys and Git config? (y/N) " config_choice
+    if [[ "$config_choice" =~ ^[yY]$ ]]; then
+        setup_config
+        echo "Done."
+    else
+        echo "Skipping SSH keygen and Git config setup..."
     fi
     echo
 
