@@ -192,6 +192,14 @@ install_code_editor() {
     esac
 }
 
+# Install Steam with Proton-GE
+setup_protonge() {
+    echo "Installing Steam..."
+    sudo dnf install steam -y
+    echo "Installing latest Proton-GE..."
+    mkdir -p ~/.steam/root/compatibilitytools.d && curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep "browser_download_url.*tar.gz" | cut -d\" -f4 | xargs curl -L | tar -xz -C ~/.steam/root/compatibilitytools.d    
+}
+
 # Install the preferred browser.
 install_browser() {
     echo "Choose your preferred browser:"
@@ -467,6 +475,15 @@ if [[ "$input" =~ ^[yY]$ ]]; then
         echo "Browser installation complete."
     else
         echo "Default browser (Firefox) will be used."
+    fi
+    echo
+
+    read -r -p "Install Steam with latest Proton-GE? (y/N) " steam_choice
+    if [[ "$steam_choice" =~ ^[yY]$ ]]; then
+        setup_protonge
+        echo "Steam with Proton-GE setup done."
+    else
+        echo "Skipping Steam & Proton-GE setup..."
     fi
     echo
 
