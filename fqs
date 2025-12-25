@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # |---------------------------------------|
-# | Copyright (c) 2024-2025 Vili. GPL-3.0 |
+# | Copyright (c) 2024-2025 Vili <https://vili.dev>. GPL-3.0 |
 # |---------------------------------------|
 #        Made in Finland, with love.
 
@@ -27,14 +27,14 @@ add_rpm_repos() {
     sudo dnf group upgrade core -y
 }
 
-# Adds and enables the Flathub remote.
-add_flatpak_repos() {
-    if ! command_exists flatpak; then
-        echo "Flatpak not found. Installing flatpak..."
-        sudo dnf install flatpak -y
-    fi
-    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-}
+# # Adds and enables the Flathub remote.
+# add_flatpak_repos() {
+#     if ! command_exists flatpak; then
+#         echo "Flatpak not found. Installing flatpak..."
+#         sudo dnf install flatpak -y
+#     fi
+#     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+# }
 
 # Appends performance-friendly options to /etc/dnf/dnf.conf.
 append_dnf_configs() {
@@ -197,7 +197,7 @@ setup_protonge() {
     echo "Installing Steam..."
     sudo dnf install steam -y
     echo "Installing latest Proton-GE..."
-    mkdir -p ~/.steam/root/compatibilitytools.d && curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep "browser_download_url.*tar.gz" | cut -d\" -f4 | xargs curl -L | tar -xz -C ~/.steam/root/compatibilitytools.d    
+    mkdir -p ~/.steam/root/compatibilitytools.d && curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep "browser_download_url.*tar.gz" | cut -d\" -f4 | xargs curl -L | tar -xz -C ~/.steam/root/compatibilitytools.d
 }
 
 # Install the preferred browser.
@@ -427,11 +427,11 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     echo "RPM Fusion enabled."
     echo
 
-    echo "Enabling Flathub repository..."
-    sleep 2
-    add_flatpak_repos
-    echo "Flathub enabled."
-    echo
+    # echo "Enabling Flathub repository..."
+    # sleep 2
+    # add_flatpak_repos
+    # echo "Flathub enabled."
+    # echo
 
     echo "Optimizing DNF configuration..."
     sleep 2
