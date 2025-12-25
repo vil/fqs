@@ -27,14 +27,14 @@ add_rpm_repos() {
     sudo dnf group upgrade core -y
 }
 
-# # Adds and enables the Flathub remote.
-# add_flatpak_repos() {
-#     if ! command_exists flatpak; then
-#         echo "Flatpak not found. Installing flatpak..."
-#         sudo dnf install flatpak -y
-#     fi
-#     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-# }
+# Adds and enables the Flathub remote.
+add_flatpak_repos() {
+    if ! command_exists flatpak; then
+        echo "Flatpak not found. Installing flatpak..."
+        sudo dnf install flatpak -y
+    fi
+    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+}
 
 # Appends performance-friendly options to /etc/dnf/dnf.conf.
 append_dnf_configs() {
@@ -257,7 +257,8 @@ EOF
 install_winboat() {
     echo "Installing and setuping WinBoat, make sure you have virtualization enabled in your BIOS..."
     sudo dnf install docker docker-compose freerdp.x86_64 -y
-    sudo usermod -aG docker "$USER"
+    # sudo groupadd docker
+    # udo usermod -aG docker "$USER"
     echo -e "ip_tables\niptable_nat" | sudo tee /etc/modules-load.d/iptables.conf
     echo "Getting and installing the WinBoat RPM file..."
     curl -s https://api.github.com/repos/TibixDev/winboat/releases/latest | grep -oP '"browser_download_url": "\K[^"]*\.rpm' | head -1 | xargs curl -L -o /tmp/winboat.rpm
@@ -426,11 +427,11 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     echo "RPM Fusion enabled."
     echo
 
-    # echo "Enabling Flathub repository..."
-    # sleep 2
-    # add_flatpak_repos
-    # echo "Flathub enabled."
-    # echo
+    echo "Enabling Flathub repository..."
+    sleep 2
+    add_flatpak_repos
+    echo "Flathub enabled."
+    echo
 
     echo "Optimizing DNF configuration..."
     sleep 2
