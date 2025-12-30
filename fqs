@@ -83,10 +83,18 @@ sys_hardening() {
     # Install usbguard
     echo Installing usbguard for USB device control...
     sudo dnf install -y usbguard usbguard-notifier
-    # Generate config for current hardware
     sudo usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
-    # Enable and start the service
     sudo systemctl enable --now usbguard
+    echo
+    # Install fail2ban
+    echo "Installing and enabling fail2ban to prevent bruteforcing attacks..."
+    sudo dnf install -y fail2ban
+    sudo systemctl enable --now fail2ban
+    echo
+    # Install Secure Blue's hardened_malloc
+    echo "Installing hardened_malloc found in GrapheneOS and SecureBlue..."
+    sudo dnf copr enable secureblue/hardened_malloc
+    sudo dnf install -y hardened_malloc
 
     # Enable MAC address randomization for Wi-Fi
     echo Enabling MAC address randomization for Wi-Fi...
@@ -258,7 +266,7 @@ install_winboat() {
     echo "Installing and setuping WinBoat, make sure you have virtualization enabled in your BIOS..."
     sudo dnf install docker docker-compose freerdp.x86_64 -y
     # sudo groupadd docker
-    # udo usermod -aG docker "$USER"
+    # sudo usermod -aG docker "$USER"
     echo -e "ip_tables\niptable_nat" | sudo tee /etc/modules-load.d/iptables.conf
     echo "Getting and installing the WinBoat RPM file..."
     curl -s https://api.github.com/repos/TibixDev/winboat/releases/latest | grep -oP '"browser_download_url": "\K[^"]*\.rpm' | head -1 | xargs curl -L -o /tmp/winboat.rpm
