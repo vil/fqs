@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# |---------------------------------------|
+
+# |----------------------------------------------------------|
 # | Copyright (c) 2024-2025 Vili <https://vili.dev>. GPL-3.0 |
-# |---------------------------------------|
-#        Made in Finland, with love.
+# |----------------------------------------------------------|
+#               Made in Finland, with love.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -91,11 +92,6 @@ sys_hardening() {
     sudo dnf install -y fail2ban
     sudo systemctl enable --now fail2ban
     echo
-    # Install Secure Blue's hardened_malloc
-    echo "Installing hardened_malloc found in GrapheneOS and SecureBlue..."
-    sudo dnf copr enable secureblue/hardened_malloc
-    sudo dnf install -y hardened_malloc
-
     # Enable MAC address randomization for Wi-Fi
     echo Enabling MAC address randomization for Wi-Fi...
     local network_file="/etc/NetworkManager/conf.d/00-macrandomize.conf"
