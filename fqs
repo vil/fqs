@@ -252,7 +252,11 @@ debloat_brave() {
     "BraveWalletDisabled": true,
     "BraveVPNDisabled": true,
     "BraveAIChatEnabled": false,
-    "TorDisabled": true
+    "BraveNewsDisabled": true,
+    "BraveTalkDisabled": true,
+    "SyncDisabled": true,
+    "TorDisabled": true,
+    "DnsOverHttpsMode": "automatic"
 }
 EOF
 }
@@ -582,7 +586,7 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     fi
     echo
 
-    read -r -p "Apply some system hardening (usbguard, sysctl settings, MAC randomization)? (y/N) " harden_choice
+    read -r -p "Apply some system hardening (usbguard, fail2ban, sysctl settings, MAC randomization)? (y/N) " harden_choice
     if [[ "$harden_choice" =~ ^[yY]$ ]]; then
         echo "Applying system hardening..."
         sleep 2
@@ -592,7 +596,7 @@ if [[ "$input" =~ ^[yY]$ ]]; then
         echo "Skipping system hardening."
     fi
 
-    read -r -p "Enable and enroll Secure Boot? (y/N) " enroll_sb
+    read -r -p "Enable and enroll Secure Boot? Note that you must have secure boot enabled in your BIOS. (y/N) " enroll_sb
     if [[ "$enroll_sb" =~ ^[yY]$ ]]; then
         echo "Enabling and enrolling Secure Boot keys..."
         sleep 2
