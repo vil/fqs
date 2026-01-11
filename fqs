@@ -217,6 +217,7 @@ install_browser() {
         1)
             sudo dnf config-manager addrepo --from-repofile=https://repo.secureblue.dev/secureblue.repo
             sudo dnf upgrade --refresh -y && sudo dnf install trivalent -y
+            ;;
         2)
             curl -fsS https://dl.brave.com/install.sh | sh
             echo
