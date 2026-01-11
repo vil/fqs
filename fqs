@@ -171,8 +171,8 @@ install_vpn_app() {
 # Install the preferred code editor.
 install_code_editor() {
     echo "Choose your preferred code editor:"
-    echo "  1. Zed (https://zed.dev)"
-    echo "  2. VSCodium (https://vscodium.com/)"
+    echo "  1. Zed (https://zed.dev) [Recommended]"
+    echo "  2. VSCodium (https://vscodium.com/) [Recommended]"
     echo "  3. NeoVim+NvChad (https://neovim.io/ with NvChad https://nvchad.com)"
     read -r -p "Enter the number of your preferred editor: " choice
 
@@ -207,13 +207,17 @@ setup_protonge() {
 # Install the preferred browser.
 install_browser() {
     echo "Choose your preferred browser:"
-    echo "  1. Brave (https://brave.com/)"
-    echo "  2. Librewolf (https://librewolf.net/)"
-    echo "  3. Chromium (https://chromium.org/)"
+    echo "  1. Trivalent (https://secureblue.dev) [Recommended]"
+    echo "  2. Brave (https://brave.com/)"
+    echo "  3. Librewolf (https://librewolf.net/)"
+    echo "  4. Chromium (https://chromium.org/)"
     read -r -p "Enter the number of your preferred browser: " choice
 
     case "$choice" in
         1)
+            sudo dnf config-manager addrepo --from-repofile=https://repo.secureblue.dev/secureblue.repo
+            sudo dnf upgrade --refresh -y && sudo dnf install trivalent -y
+        2)
             curl -fsS https://dl.brave.com/install.sh | sh
             echo
             echo
@@ -224,11 +228,11 @@ install_browser() {
                 echo "Skipping Brave debloat step."
             fi
             ;;
-        2)
+        3)
             curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
             sudo dnf upgrade --refresh -y && sudo dnf install librewolf -y
             ;;
-        3)
+        4)
             sudo dnf install chromium -y
             ;;
         *)
