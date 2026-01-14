@@ -240,6 +240,15 @@ setup_protonge() {
     mkdir -p ~/.steam/root/compatibilitytools.d && curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep "browser_download_url.*tar.gz" | cut -d\" -f4 | xargs curl -L | tar -xz -C ~/.steam/root/compatibilitytools.d
 }
 
+remove_firefox() {
+    read -r -p "Now that you have your new browser installed, do you want to remove Firefox (y/N) " firefox_removal
+    if [[ "$firefox_removal" =~ ^[yY]$ ]]; then
+        sudo dnf remove firefox -y
+    else
+        echo "Skipping..."
+    fi
+}
+
 # Install the preferred browser.
 install_browser() {
     echo "Choose your preferred browser:"
@@ -253,6 +262,7 @@ install_browser() {
         1)
             sudo dnf config-manager addrepo --from-repofile=https://repo.secureblue.dev/secureblue.repo
             sudo dnf upgrade --refresh -y && sudo dnf install trivalent -y
+            remove_firefox
             ;;
         2)
             curl -fsS https://dl.brave.com/install.sh | sh
@@ -264,13 +274,16 @@ install_browser() {
             else
                 echo "Skipping Brave debloat step."
             fi
+            remove_firefox
             ;;
         3)
             curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
             sudo dnf upgrade --refresh -y && sudo dnf install librewolf -y
+            remove_firefox
             ;;
         4)
             sudo dnf install chromium -y
+            remove_firefox
             ;;
         *)
             echo "Invalid choice. Using default (Firefox)."
@@ -455,7 +468,7 @@ setup_config() {
 # ======== Main =========
 echo "FQS (Fedora Quick Start) Script"
 echo "Finish your post-installation steps easily."
-echo "By Vili (@vil)"
+echo "By Vili (@vil) - https://vili.dev"
 echo
 echo "You will be prompted for sudo password as needed."
 echo
@@ -627,7 +640,7 @@ if [[ "$input" =~ ^[yY]$ ]]; then
     fi
     echo
 
-    read -r -p "Apply some system hardening (usbguard, fail2ban, sysctl settings, MAC randomization)? (y/N) " harden_choice
+    read -r -p "Apply some system hardening (usbguard, fail2ban, hardened kernel params, MAC randomization, disable cups and avahi)? (y/N) " harden_choice
     if [[ "$harden_choice" =~ ^[yY]$ ]]; then
         echo "Applying system hardening..."
         sleep 2
@@ -647,7 +660,7 @@ if [[ "$input" =~ ^[yY]$ ]]; then
         echo "Skipping Secure Boot setup..."
     fi
 
-    echo "All steps complete, remember to star this on GitHub. Goodbye!"
+    echo "All steps complete and your system is now rock solid. Remember to star this on GitHub, goodbye!"
 else
     echo "Script cancelled. Goodbye!"
 fi
