@@ -82,7 +82,7 @@ EOF
 # Hardening
 sys_hardening() {
     # Install usbguard
-    echo Installing usbguard for USB device control...
+    echo "Installing usbguard for USB device control..."
     sudo dnf install -y usbguard usbguard-notifier
     sudo usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
     sudo systemctl enable --now usbguard
@@ -93,7 +93,7 @@ sys_hardening() {
     sudo systemctl enable --now fail2ban
     echo
     # Enable MAC address randomization for Wi-Fi
-    echo Enabling MAC address randomization for Wi-Fi...
+    echo "Enabling MAC address randomization for Wi-Fi..."
     local network_file="/etc/NetworkManager/conf.d/00-macrandomize.conf"
     if [ ! -f "$network_file" ]; then
         sudo touch "$network_file"
@@ -111,7 +111,7 @@ EOF
     fi
 
     # Some sysctl hardening settings
-    echo Applying sysctl hardening settings...
+    echo "Applying hardened kernel parameters..."
     local sysctl_file="/etc/sysctl.d/99-hardening.conf"
 
     if [ ! -f "$sysctl_file" ]; then
@@ -120,14 +120,50 @@ EOF
     sudo tee -a "$sysctl_file" >/dev/null <<'EOF'
 # Disable IP forwarding
 net.ipv4.ip_forward = 0
+net.ipv6.conf.all.forwarding = 0
+
 # Kernel VA Space Protection
 kernel.randomize_va_space = 2
+
 # Ignore ICMP broadcast requests
 net.ipv4.icmp_echo_ignore_broadcasts = 1
+
 # SUID Dumpable disabled
 fs.suid_dumpable = 0
+
+# Enable SYN flood protection
+net.ipv4.tcp_syncookies = 1
+
+# Ignore ICMP redirects
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+
+# Disable source routing
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv6.conf.all.accept_source_route = 0
+
+# Log martian packets
+net.ipv4.conf.all.log_martians = 1
+
+# Restrict kernel pointer exposure
+kernel.kptr_restrict = 2
+
+# Restrict dmesg access
+kernel.dmesg_restrict = 1
 EOF
     sudo sysctl --system
+
+    # Firewalld stuff
+    echo "Making firewalld default zone to DROP and runtime into PERMAMENT..."
+    sudo firewall-cmd --set-default-zone=drop
+    sudo firewall-cmd --runtime-to-permanent
+
+    echo
+
+    # Disabling cups and avahi-daemon
+    echo "Disabling cups and avahi-daemon, if you need these, just enable them again."
+    sudo systemctl disable cups
+    sudo systemctl disable avahi-daemon
 }
 
 # Enroll and setup secure boot
