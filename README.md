@@ -1,6 +1,8 @@
 # fqs
 Fedora Quick Start, a script to finish your post-installation and hardening steps easily.
 
+If [Secureblue](https://secureblue.dev) is too "hardcore" for you, then this script might be enough for you.
+
 <img src="real+fax.jpeg" width=550px height=350px>
 
 Steps the script does:
@@ -9,15 +11,15 @@ Steps the script does:
 3. Enables RPM Fusion repositories for additional software.
 4. Enables Flathub repositories for flatpak packages.
 5. Configures dnf to speed up package management.
-6. Installs Nvidia drivers if an Nvidia GPU is detected.
+6. Installs Nvidia drivers, if an Nvidia GPU is detected.
 7. Installs Steam with Proton-GE.
-8. Patches bluetooth and keyboard settings.
+8. Patches bluetooth and FN-key functionatility keyboard settings.
 9. Installs a trusted VPN app.
 10. Installs a list of user-specified software.
 11. Install WinBoat for Windows app support.
 12. Installs a custom Bash prompt.
 13. Generates SSH keys and creates Git config.
-14. Applies some **hardening** for your system.
+14. Applies **hardening** for your system.
 15. Create and enroll Secure Boot keys.
 
 all steps require user confirmation, so you can choose yourself what to do.
@@ -37,6 +39,9 @@ Or you can follow the installation steps below.
 
 ## Contributing
 If you are a Fedora user and want to improve this, just feel free to open up a pull request :)
+
+### Credits
+- [Secureblue](https://secureblue.dev)
 
 -----------------------------
 ## License
