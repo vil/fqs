@@ -366,7 +366,7 @@ remove_firefox() {
 install_browser() {
     echo "Choose your preferred browser:"
     echo "  1. Trivalent (https://secureblue.dev) [Recommended]"
-    echo "  2. Brave (https://brave.com/)"
+    echo "  2. Brave (https://brave.com/) [Recommended]"
     echo "  3. Librewolf (https://librewolf.net/)"
     echo "  4. Chromium (https://chromium.org/)"
     read -r -p "Enter the number of your preferred browser: " choice
