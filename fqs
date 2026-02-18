@@ -365,19 +365,25 @@ remove_firefox() {
 # Install the preferred browser.
 install_browser() {
     echo "Choose your preferred browser:"
-    echo "  1. Trivalent (https://secureblue.dev) [Recommended]"
-    echo "  2. Brave (https://brave.com/) [Recommended]"
-    echo "  3. Librewolf (https://librewolf.net/)"
+    echo "  1. Helium (https://helium.computer) [Recommended]"
+    echo "  2. Trivalent (https://secureblue.dev) [Recommended]"
+    echo "  3. Brave (https://brave.com/)"
     echo "  4. Chromium (https://chromium.org/)"
+    echo "  5. Librewolf (https://librewolf.net/)"
     read -r -p "Enter the number of your preferred browser: " choice
 
     case "$choice" in
         1)
+            sudo dnf copr enable imput/helium
+            sys_update && sudo dnf install helium-bin -y
+            remove_firefox
+            ;;
+        2)
             sudo dnf config-manager addrepo --from-repofile=https://repo.secureblue.dev/secureblue.repo
             sys_update && sudo dnf install trivalent -y
             remove_firefox
             ;;
-        2)
+        3)
             curl -fsS https://dl.brave.com/install.sh | sh
             echo
             echo
@@ -389,13 +395,13 @@ install_browser() {
             fi
             remove_firefox
             ;;
-        3)
-            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
-            sys_update && sudo dnf install librewolf -y
-            remove_firefox
-            ;;
         4)
             sudo dnf install chromium -y
+            remove_firefox
+            ;;
+        5)
+            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
+            sys_update && sudo dnf install librewolf -y
             remove_firefox
             ;;
         *)
