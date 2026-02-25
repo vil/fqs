@@ -3,40 +3,50 @@
 # |----------------------------------------------------------|
 # | Copyright (c) 2024-2026 Vili <https://vili.dev>. GPL-3.0 |
 # |----------------------------------------------------------|
-#               Made in Finland, with love.
+#                       Made in Finland.
 
 set -euo pipefail
-IFS=$'\n\t'
 
-# Check if a command exists
+# Ensure whiptail is installed
+if ! command -v whiptail &> /dev/null; then
+    echo "Whiptail is required for the TUI. Installing..."
+    sudo dnf install newt -y > /dev/null
+fi
+
+# Authenticate sudo upfront
+sudo -v
+# Keep sudo alive during the script execution
+while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+
+# Core
+
 command_exists() { command -v "$1" &>/dev/null; }
 
-# Performs a full system upgrade.
-sys_update() { sudo dnf upgrade --refresh -y; }
+sys_update() {
+    echo -e "\n=> Performing system upgrade..."
+    sudo dnf upgrade --refresh -y
+}
 
-# Adds and enables the RPM Fusion repositories.
 add_rpm_repos() {
+    echo -e "\n=> Adding RPM Fusion and Flathub..."
     local fedora_ver
     fedora_ver="$(rpm -E %fedora)"
     sudo dnf install -y "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_ver}.noarch.rpm" \
-                         "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm"
+                        "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm"
     sudo dnf install -y dnf-plugins-core
     sudo dnf group upgrade core -y
-}
 
-# Adds and enables the Flathub remote.
-add_flatpak_repos() {
     if ! command_exists flatpak; then
-        echo "Flatpak not found. Installing flatpak..."
         sudo dnf install flatpak -y
     fi
     flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 }
 
-# Appends performance-friendly options to /etc/dnf/dnf.conf.
 append_dnf_configs() {
+    echo -e "\n=> Optimizing DNF..."
     local conf_file="/etc/dnf/dnf.conf"
-    sudo tee -a "$conf_file" >/dev/null <<'EOF'
+    if ! grep -q "max_parallel_downloads" "$conf_file"; then
+        sudo tee -a "$conf_file" >/dev/null <<'EOF'
 gpgcheck=1
 clean_requirements_on_remove=True
 skip_if_unavailable=True
@@ -47,18 +57,15 @@ installonly_limit=3
 max_parallel_downloads=10
 defaultyes=True
 EOF
-    sys_update
+    fi
 }
 
-# Setup automatic updates (DNF-automatic).
 setup_auto_updates() {
+    echo -e "\n=> Setting up DNF Automatic Updates..."
     sudo dnf install -y dnf-automatic
-
-    # check if config file exists
     local conf_file="/etc/dnf/automatic.conf"
     if [ ! -f "$conf_file" ]; then
         sudo touch "$conf_file"
-        # append config
         sudo tee -a "$conf_file" >/dev/null <<'EOF'
 [commands]
 upgrade_type = security
@@ -68,33 +75,19 @@ apply_updates = yes
 
 [emitters]
 emit_via = stdio
-
 EOF
     fi
-
     sudo systemctl enable --now dnf-automatic.timer
 }
 
-# Hardening
 sys_hardening() {
-    # Install usbguard
-    echo "Installing usbguard for USB device control..."
-    sudo dnf install -y usbguard usbguard-notifier
+    echo -e "\n=> Applying System Hardening..."
+    sudo dnf install -y usbguard usbguard-notifier fail2ban
     sudo usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
-    sudo systemctl enable --now usbguard
-    echo
-    # Install fail2ban
-    echo "Installing and enabling fail2ban to prevent bruteforcing attacks..."
-    sudo dnf install -y fail2ban
-    sudo systemctl enable --now fail2ban
-    echo
-    # Enable MAC address randomization for Wi-Fi
-    echo "Enabling MAC address randomization for Wi-Fi..."
+    sudo systemctl enable --now usbguard fail2ban
+
     local network_file="/etc/NetworkManager/conf.d/00-macrandomize.conf"
     if [ ! -f "$network_file" ]; then
-        sudo touch "$network_file"
-    fi
-    if ! grep -q "wifi.scan-rand-mac-address=yes" "$network_file"; then
         sudo tee -a "$network_file" >/dev/null <<'EOF'
 [device]
 wifi.scan-rand-mac-address=yes
@@ -106,463 +99,181 @@ EOF
         sudo systemctl restart NetworkManager
     fi
 
-    # Some sysctl hardening settings
-    echo "Applying secureblue's kernel hardening via sysctl..."
+    echo "Applying sysctl hardening..."
     local sysctl_file="/etc/sysctl.d/55-hardening.conf"
-
-    if [ ! -f "$sysctl_file" ]; then
-        sudo touch "$sysctl_file"
-    fi
-    sudo tee -a "$sysctl_file" >/dev/null <<'EOF'
-# SPDX-FileCopyrightText: Copyright 2025-2026 The Secureblue Authors
-#
-# SPDX-License-Identifier: Apache-2.0
-
-# https://docs.kernel.org/networking/ip-sysctl.html
+    sudo tee "$sysctl_file" >/dev/null <<'EOF'
 net.ipv4.tcp_syncookies = 1
-
-# https://docs.kernel.org/networking/ip-sysctl.html
-# https://datatracker.ietf.org/doc/html/rfc1337
 net.ipv4.tcp_rfc1337 = 1
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.icmp_echo_ignore_broadcasts = 1
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.icmp_ignore_bogus_error_responses = 1
-
-# https://docs.kernel.org/networking/ip-sysctl.html
-net.ipv4.icmp_echo_ignore_all = 1
-net.ipv6.icmp.echo_ignore_all = 1
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.tcp_timestamps = 0
-
-# Enable IP spoofing protection, turn on source route verification
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.default.rp_filter = 1
-
-# Disable ICMP Redirect Acceptance
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.*.send_redirects = 0
 net.ipv4.conf.*.accept_redirects = 0
 net.ipv6.conf.*.accept_redirects = 0
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.*.shared_media = 0
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.*.arp_filter = 1
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.*.arp_ignore = 2
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.all.drop_gratuitous_arp = 1
-
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.*.accept_source_route = 0
 net.ipv6.conf.*.accept_source_route = 0
 net.ipv4.tcp_sack=0
 net.ipv4.tcp_dsack=0
-
-# Enable ipv6 privacy extension
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv6.conf.all.use_tempaddr = 2
 net.ipv6.conf.default.use_tempaddr = 2
-
-# Enable Log Spoofed Packets, Source Routed Packets, Redirect Packets
-# https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.conf.all.log_martians = 1
 net.ipv4.conf.default.log_martians = 1
-
-# https://docs.kernel.org/admin-guide/sysctl/net.html#bpf-jit-harden
 net.core.bpf_jit_harden = 2
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#unprivileged-bpf-disabled
 kernel.unprivileged_bpf_disabled = 1
-
-# https://docs.kernel.org/admin-guide/sysrq.html
 kernel.sysrq = 0
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#perf-event-paranoid
 kernel.perf_event_paranoid = 3
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#kptr-restrict
 kernel.kptr_restrict = 2
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#dmesg-restrict
 kernel.dmesg_restrict = 1
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#oops-limit
 kernel.oops_limit=100
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#warn-limit
 kernel.warn_limit=100
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#panic
 kernel.panic=-1
-
-# https://docs.kernel.org/admin-guide/binfmt-misc.html
 fs.binfmt_misc.status = 0
-
-# https://docs.kernel.org/admin-guide/sysctl/fs.html#suid-dumpable
 fs.suid_dumpable = 0
-
-# https://docs.kernel.org/admin-guide/sysctl/fs.html#protected-regular
 fs.protected_regular = 2
-
-# https://docs.kernel.org/admin-guide/sysctl/fs.html#protected-fifos
 fs.protected_fifos = 2
-
-# https://docs.kernel.org/admin-guide/sysctl/fs.html#protected-hardlinks
-# Default in Fedora, including for runtime audit
 fs.protected_hardlinks = 1
-
-# https://docs.kernel.org/admin-guide/sysctl/fs.html#protected-symlinks
-# Default in Fedora, including for runtime audit
 fs.protected_symlinks = 1
-
-# https://lkml.org/lkml/2019/4/15/890
 dev.tty.ldisc_autoload = 0
-
-# Restrict userfaultfd to CAP_SYS_PTRACE
-# https://docs.kernel.org/admin-guide/sysctl/vm.html#unprivileged-userfaultfd
 vm.unprivileged_userfaultfd = 0
-
-# Prevent kernel info leaks in console during boot.
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#printk
 kernel.printk = 3 3 3 3
-
-# Disables kexec which can be used to replace the running kernel.
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#kexec-load-disabled
 kernel.kexec_load_disabled = 1
-
-# Disable core dump
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#core-pattern
 kernel.core_pattern = |/bin/false
-
-# Disable io_uring
-# https://lore.kernel.org/lkml/20230629132711.1712536-1-matteorizzo@google.com/T/
-# https://security.googleblog.com/2023/06/learnings-from-kctf-vrps-42-linux.html
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#io-uring-disabled
 kernel.io_uring_disabled = 2
-
-# Improve ALSR effectiveness for mmap.
-# https://docs.kernel.org/admin-guide/sysctl/vm.html#mmap-rnd-bits
 vm.mmap_rnd_bits = 32
 vm.mmap_rnd_compat_bits = 16
-
-# https://docs.kernel.org/admin-guide/sysctl/kernel.html#randomize-va-space
-# Default in Fedora, including for runtime audit
 kernel.randomize_va_space = 2
-
-# https://docs.kernel.org/admin-guide/sysctl/vm.html#mmap-min-addr
-# https://docs.kernel.org/admin-guide/sysctl/vm.html#max-map-count
-# Default in Fedora, including for runtime audit
 vm.mmap_min_addr = 65536
 vm.max_map_count = 1048576
 EOF
     sudo sysctl --system
-
-    # Firewalld stuff
-    echo "Making firewalld default zone to DROP and runtime into PERMAMENT..."
-    sudo firewall-cmd --set-default-zone=drop
-    sudo firewall-cmd --runtime-to-permanent
-
-    echo
-
-    # Disabling cups and avahi-daemon
-    echo "Disabling cups and avahi-daemon, if you need these, just enable them again."
-    sudo systemctl disable cups
-    sudo systemctl disable avahi-daemon
+    echo "Disabling cups and avahi-daemon..."
+    sudo systemctl disable cups avahi-daemon
 }
 
-# Enroll and setup secure boot
-enroll_secureboot() {
-    # Installing sbctl
-    sudo dnf copr enable chenxiaolong/sbctl
-    sys_update
-    sudo dnf install sbctl -y
+setup_firewall_drop() {
+    echo -e "\n=> Configuring Firewalld (Setting default zone to DROP)..."
+    sudo firewall-cmd --set-default-zone=drop
+    sudo firewall-cmd --runtime-to-permanent
+}
 
-    # Enroll and create keys
-    echo "Creating keys..."
+enroll_secureboot() {
+    echo -e "\n=> Setting up Secure Boot..."
+    sudo dnf copr enable chenxiaolong/sbctl -y
+    sudo dnf install sbctl -y
     sudo sbctl create-keys
-    echo "Enrolling keys..."
     sudo sbctl enroll-keys -m
 }
 
-# VPN App installation
 install_vpn_app() {
-    echo "Choose your preferred VPN app:"
-    echo "  1. IVPN (https://ivpn.net/)"
-    echo "  2. Mullvad (https://mullvad.net/)"
-    read -r -p "Enter the number of your preferred VPN app: " choice
-
-    case "$choice" in
-        1)
-            sudo dnf config-manager addrepo --from-repofile=https://repo.ivpn.net/stable/fedora/generic/ivpn.repo
-            sys_update
-            sudo dnf install -y iptables-legacy ivpn-ui
-            ;;
-        2)
-            sudo dnf config-manager addrepo --from-repofile=https://repository.mullvad.net/rpm/stable/mullvad.repo
-            sys_update
-            sudo dnf install -y mullvad-vpn
-            ;;
-        *)
-            echo "Invalid choice. No VPN app installed."
-            ;;
-    esac
+    echo -e "\n=> Installing VPN ($1)..."
+    if [ "$1" == "IVPN" ]; then
+        sudo dnf config-manager addrepo --from-repofile=https://repo.ivpn.net/stable/fedora/generic/ivpn.repo
+        sudo dnf install -y iptables-legacy ivpn-ui
+    elif [ "$1" == "Mullvad" ]; then
+        sudo dnf config-manager addrepo --from-repofile=https://repository.mullvad.net/rpm/stable/mullvad.repo
+        sudo dnf install -y mullvad-vpn
+    fi
 }
 
-# Install the preferred code editor.
 install_code_editor() {
-    echo "Choose your preferred code editor:"
-    echo "  1. Zed (https://zed.dev) [Recommended]"
-    echo "  2. VSCodium (https://vscodium.com/) [Recommended]"
-    echo "  3. NeoVim+NvChad (https://neovim.io/ with NvChad https://nvchad.com)"
-    read -r -p "Enter the number of your preferred editor: " choice
-
-    case "$choice" in
-        1)
-            curl -f https://zed.dev/install.sh | sh
-            ;;
-        2)
+    echo -e "\n=> Installing Editor ($1)..."
+    case "$1" in
+        "Zed") curl -f https://zed.dev/install.sh | sh ;;
+        "VSCodium")
             sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
             printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=VSCodium Repository\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h\n" | sudo tee /etc/yum.repos.d/vscodium.repo
-            sys_update && sudo dnf install codium -y
-            ;;
-        3)
-            sys_update && sudo dnf install neovim -y
-            git clone https://github.com/NvChad/starter ~/.config/nvim
-            echo "NvChad will be installed once you start NeoVim for the first time..!"
-            ;;
-        *)
-            echo "Invalid choice. No editor installed."
-            ;;
+            sudo dnf install codium -y ;;
+        "NeoVim")
+            sudo dnf install neovim -y
+            git clone https://github.com/NvChad/starter ~/.config/nvim ;;
     esac
 }
 
-# Install Steam with Proton-GE
 setup_protonge() {
-    echo "Installing Steam..."
+    echo -e "\n=> Installing Steam and Proton-GE..."
     sudo dnf install steam -y
-    echo "Installing latest Proton-GE..."
-    mkdir -p ~/.steam/root/compatibilitytools.d && curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep "browser_download_url.*tar.gz" | cut -d\" -f4 | xargs curl -L | tar -xz -C ~/.steam/root/compatibilitytools.d
+    mkdir -p ~/.steam/root/compatibilitytools.d
+    curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep "browser_download_url.*tar.gz" | cut -d\" -f4 | xargs curl -L | tar -xz -C ~/.steam/root/compatibilitytools.d
 }
 
-remove_firefox() {
-    read -r -p "Now that you have your new browser installed, do you want to remove Firefox (y/N) " firefox_removal
-    if [[ "$firefox_removal" =~ ^[yY]$ ]]; then
-        sudo dnf remove firefox -y
-    else
-        echo "Skipping..."
-    fi
-}
-
-# Install the preferred browser.
 install_browser() {
-    echo "Choose your preferred browser:"
-    echo "  1. Helium (https://helium.computer) [Recommended]"
-    echo "  2. Trivalent (https://secureblue.dev) [Recommended]"
-    echo "  3. Brave (https://brave.com/)"
-    echo "  4. Chromium (https://chromium.org/)"
-    echo "  5. Librewolf (https://librewolf.net/)"
-    read -r -p "Enter the number of your preferred browser: " choice
-
-    case "$choice" in
-        1)
-            sudo dnf copr enable imput/helium
-            sys_update && sudo dnf install helium-bin -y
-            remove_firefox
-            ;;
-        2)
+    echo -e "\n=> Installing Browser ($1)..."
+    case "$1" in
+        "Helium")
+            sudo dnf copr enable imput/helium -y
+            sudo dnf install helium-bin -y ;;
+        "Trivalent")
             sudo dnf config-manager addrepo --from-repofile=https://repo.secureblue.dev/secureblue.repo
-            sys_update && sudo dnf install trivalent -y
-            remove_firefox
-            ;;
-        3)
+            sudo dnf install trivalent -y ;;
+        "Brave")
             curl -fsS https://dl.brave.com/install.sh | sh
-            echo
-            echo
-            read -r -p "Now that you have Brave installed, do you want to debloat it as well? (Disable Tor, VPN, AI, Rewards.) (y/N) " debloat
-            if [[ "$debloat" =~ ^[yY]$ ]]; then
-                debloat_brave
-            else
-                echo "Skipping Brave debloat step."
-            fi
-            remove_firefox
+            # Brave debloat policies
+            sudo mkdir -p /etc/brave/policies/managed/
+            sudo tee /etc/brave/policies/managed/debloat.json >/dev/null <<'EOF'
+{ "BraveRewardsDisabled": true, "BraveWalletDisabled": true, "BraveVPNDisabled": true, "BraveAIChatEnabled": false, "BraveNewsDisabled": true, "BraveTalkDisabled": true, "SyncDisabled": true, "TorDisabled": true, "DnsOverHttpsMode": "automatic" }
+EOF
             ;;
-        4)
-            sudo dnf install chromium -y
-            remove_firefox
-            ;;
-        5)
-            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | pkexec tee /etc/yum.repos.d/librewolf.repo >/dev/null
-            sys_update && sudo dnf install librewolf -y
-            remove_firefox
-            ;;
-        *)
-            echo "Invalid choice. Using default (Firefox)."
-            ;;
+        "Chromium") sudo dnf install chromium -y ;;
+        "Librewolf")
+            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | sudo tee /etc/yum.repos.d/librewolf.repo >/dev/null
+            sudo dnf install librewolf -y ;;
     esac
 }
 
-# Brave debloating
-debloat_brave() {
-    echo "Creating policies..."
-    sudo mkdir -p /etc/brave/policies/managed/
-    local debloat_policies="/etc/brave/policies/managed/debloat.json"
-
-    if [ ! -f "$debloat_policies" ]; then
-        sudo touch "$debloat_policies"
-    fi
-    sudo tee -a "$debloat_policies" >/dev/null <<'EOF'
-{
-    "BraveRewardsDisabled": true,
-    "BraveWalletDisabled": true,
-    "BraveVPNDisabled": true,
-    "BraveAIChatEnabled": false,
-    "BraveNewsDisabled": true,
-    "BraveTalkDisabled": true,
-    "SyncDisabled": true,
-    "TorDisabled": true,
-    "DnsOverHttpsMode": "automatic"
-}
-EOF
-}
-
-# Install and setup winboat.app
 install_winboat() {
-    echo "Installing and setuping WinBoat, make sure you have virtualization enabled in your BIOS..."
+    echo -e "\n=> Installing WinBoat..."
     sudo dnf install docker docker-compose freerdp.x86_64 -y
-    # sudo groupadd docker
-    # sudo usermod -aG docker "$USER"
     echo -e "ip_tables\niptable_nat" | sudo tee /etc/modules-load.d/iptables.conf
-    echo "Getting and installing the WinBoat RPM file..."
     curl -s https://api.github.com/repos/TibixDev/winboat/releases/latest | grep -oP '"browser_download_url": "\K[^"]*\.rpm' | head -1 | xargs curl -L -o /tmp/winboat.rpm
     sudo dnf install /tmp/winboat.rpm -y
 }
 
-# # Install communication apps.
-# install_communication() {
-#     echo "Choose your communication app(s) (enter numbers separated by spaces):"
-#     echo "  1. Discord (https://discord.com/)"
-#     echo "  2. Vesktop (https://vencord.dev/)"
-#     echo "  3. Element Desktop (https://element.io/)"
-#     echo "  4. Telegram Desktop (https://telegram.org/)"
-#     echo "  5. Signal Desktop (https://signal.org/)"
-
-#     # Temporarily set IFS to include spaces
-#     local oldIFS=$IFS
-#     IFS=' '
-#     read -ra choices -p "Your choices: "
-#     IFS=$oldIFS
-
-#     for choice in "${choices[@]}"; do
-#         case "$choice" in
-#             1)
-#                 sudo dnf install discord -y
-#                 ;;
-#             2)
-#                 flatpak install -y flathub dev.vencord.Vesktop
-#                 ;;
-#             3)
-#                 flatpak install -y flathub im.riot.Riot
-#                 ;;
-#             4)
-#                 sudo dnf install telegram-desktop -y
-#                 ;;
-#             5)
-#                 flatpak install -y flathub org.signal.Signal
-#                 ;;
-#             *)
-#                 echo "Invalid choice: $choice"
-#                 ;;
-#         esac
-#     done
-# }
-
-# Install useful developer tools.
 add_dev_tools() {
-    # sudo dnf groupinstall "Development Tools" "Development Libraries" -y
+    echo -e "\n=> Installing Developer Tools..."
     sudo dnf install kernel-devel android-tools python3-pip python3-devel git nodejs nodejs-npm golang -y
 }
 
-# Detect Nvidia GPU and offer driver installation.
-needs_nvidia() {
-    if lspci | grep -qi NVIDIA; then
-        read -r -p "Nvidia GPU detected. Install Nvidia drivers (akmod-nvidia)? (y/N) " resp
-        if [[ "$resp" =~ ^[yY]$ ]]; then
-            sudo dnf install akmod-nvidia -y
-            echo "Nvidia drivers installed."
-        else
-            echo "Skipping Nvidia driver installation."
-        fi
-    else
-        echo "No Nvidia GPU detected."
-    fi
+install_nvidia() {
+    echo -e "\n=> Installing Nvidia Drivers..."
+    sudo dnf install akmod-nvidia -y
 }
 
-# Patch for Apple keyboards (hid_apple fn key).
 hid_apple_patch() {
-    local conf_file="/etc/modprobe.d/hid_apple.conf"
-    if [ ! -f "$conf_file" ]; then
-        sudo touch "$conf_file"
-    fi
-    echo "options hid_apple fnmode=0" | sudo tee -a "$conf_file"
-    sudo modprobe -r hid_apple
+    echo -e "\n=> Patching Apple Keyboard (hid_apple)..."
+    echo "options hid_apple fnmode=0" | sudo tee -a /etc/modprobe.d/hid_apple.conf
+    sudo modprobe -r hid_apple || true
     sudo modprobe hid_apple
 }
 
-# Add dracut flags to support bluetooth keyboard during LUKS decryption.
 add_dracut_flags() {
-    local flags_file="/etc/dracut.conf.d/flags.conf"
-    if [ ! -f "$flags_file" ]; then
-        sudo touch "$flags_file"
-    fi
-    echo 'hostonly="yes"' | sudo tee -a "$flags_file"
-    echo 'add_dracutmodules+=" bluetooth "' | sudo tee -a "$flags_file"
+    echo -e "\n=> Adding Dracut Flags (Bluetooth Decryption)..."
+    echo 'hostonly="yes"' | sudo tee -a /etc/dracut.conf.d/flags.conf
+    echo 'add_dracutmodules+=" bluetooth "' | sudo tee -a /etc/dracut.conf.d/flags.conf
     sudo dracut --regenerate-all --force --verbose
 }
 
-# Install Tor and enable its service.
 install_tor() {
+    echo -e "\n=> Installing Tor..."
     sudo dnf install tor torbrowser-launcher -y
     sudo systemctl enable --now tor
 }
 
-# Install extra software by trying DNF first then Flatpak.
 install_selection() {
-    local oldIFS pkg
-    # Save the current IFS and temporarily set it to a space for word splitting.
-    oldIFS="$IFS"
-    IFS=' '
-    for pkg in "$@"; do
-        if rpm -q "$pkg" &>/dev/null; then
-            echo "$pkg is already installed."
-        else
-            echo "Attempting to install $pkg via DNF..."
-            if sudo dnf install -y "$pkg"; then
-                echo "Installed $pkg via DNF."
-            else
-                echo "DNF did not find $pkg. Trying Flatpak from flathub..."
-                sleep 1
-                if flatpak install -y flathub "$pkg"; then
-                    echo "Installed $pkg via Flatpak."
-                else
-                    echo "Error: $pkg not found in DNF or Flatpak repositories."
-                fi
-            fi
-        fi
+    echo -e "\n=> Installing extra packages: $1"
+    for pkg in $1; do
+        if rpm -q "$pkg" &>/dev/null; then continue; fi
+        sudo dnf install -y "$pkg" || flatpak install -y flathub "$pkg" || echo "Failed to install $pkg"
     done
-    IFS="$oldIFS"
 }
 
-# Install a custom bash prompt.
 setup_bash_prompt() {
+    echo -e "\n=> Setting up Bash Prompt..."
     tee -a "$HOME/.bashrc" >/dev/null <<'EOF'
 # Vili's Bash prompt
 PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)'
@@ -570,216 +281,128 @@ PS1='\[\e[2m\]\t\[\e[0m\] \w ${PS1_CMD1} \$ '
 EOF
 }
 
-# Setup SSH-keys and .gitconfig
 setup_config() {
-    if ! command_exists git; then
-        echo "Git is not installed... Installing it now."
-        sudo dnf install git -y
-    fi
-    echo "Running ssh-keygen first... Please answer the following questions:"
-    ssh-keygen
-    read -r -p "Enter your name for Git: " name
-    git config --global user.name "$name"
-    read -r -p "Enter your e-mail for Git: " email
-    git config --global user.email "$email"
+    echo -e "\n=> Setting up SSH and Git..."
+    if ! command_exists git; then sudo dnf install git -y; fi
+    ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -N ""
+    git config --global user.name "$1"
+    git config --global user.email "$2"
 }
 
-# ======== Main =========
-echo "FQS (Fedora Quick Start) Script"
-echo "Finish your post-installation steps easily."
-echo "By Vili (@vil) - https://vili.dev"
-echo
-echo "You will be prompted for sudo password as needed."
-echo
-echo "ALWAYS VERIFY THE SCRIPTS THAT YOU'RE RUNNING, INCLUDING THIS ONE, NEVER TRUST ANYONE ON THE INTERNET!"
-echo
+# TUI
 
-read -r -p "Do you want to continue with this script? (y/N) " input
-if [[ "$input" =~ ^[yY]$ ]]; then
-    echo "Starting system upgrade..."
-    sleep 2
-    sys_update
-    echo "System upgrade complete."
-    echo
+whiptail --title "FQS (Fedora Quick Start)" --msgbox "Welcome to the Fedora Quick Start script by Vili.\n\nThis wizard will guide you through post-installation setup. You will select all your preferences first, and then the script will run uninterrupted." 12 70
 
-    echo "Enabling RPM Fusion repositories..."
-    sleep 2
-    add_rpm_repos
-    echo "RPM Fusion enabled."
-    echo
+# 1. Base Configuration Checklist
+BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
+"Select system tweaks to apply (Space to select, Enter to confirm):" 22 75 12 \
+"UPDATE" "Perform Full System Upgrade" ON \
+"REPOS" "Enable RPM Fusion & Flathub" ON \
+"DNF" "Optimize DNF Configuration" ON \
+"HARDEN" "Apply System Hardening (Fail2Ban, Sysctl, etc)" ON \
+"FIREWALL" "Set Firewalld default zone to DROP" OFF \
+"BASH" "Install custom Bash prompt" ON \
+"AUTO_UPDATES" "Enable DNF-Automatic" OFF \
+"SECUREBOOT" "Enroll Secure Boot Keys (sbctl)" OFF \
+"TOR" "Install and enable Tor service" OFF \
+"NVIDIA" "Install Nvidia Drivers (akmod-nvidia)" OFF \
+"APPLE_KBD" "Patch Apple Keyboard FN key (hid_apple)" OFF \
+"DRACUT" "Allow BT keyboard during LUKS decryption" OFF \
+3>&1 1>&2 2>&3) || exit 0
+BASE_OPTS=$(echo "$BASE_OPTS" | tr -d '"')
 
-    echo "Enabling Flathub repository..."
-    sleep 2
-    add_flatpak_repos
-    echo "Flathub enabled."
-    echo
+# 2. Browser Selection
+BROWSER=$(whiptail --title "Web Browser" --radiolist \
+"Choose your preferred browser:" 15 60 6 \
+"None" "Stick with default Firefox" ON \
+"Helium" "Helium.computer (Recommended)" OFF \
+"Trivalent" "Secureblue.dev (Recommended)" OFF \
+"Brave" "Brave (Will be auto-debloated)" OFF \
+"Chromium" "Open-source Chrome" OFF \
+"Librewolf" "Privacy-focused Firefox fork" OFF \
+3>&1 1>&2 2>&3) || exit 0
 
-    echo "Optimizing DNF configuration..."
-    sleep 2
-    append_dnf_configs
-    echo "DNF configuration updated."
-    echo
-
-    echo "Checking for Nvidia GPU..."
-    sleep 2
-    needs_nvidia
-    echo
-
-    echo "Proceeding with user selections..."
-    sleep 2
-
-    read -r -p "Setup automatic updates (DNF-automatic)? (y/N) " auto_update
-    if [[ "$auto_update" =~ ^[yY]$ ]]; then
-        setup_auto_updates
-        echo "Automatic updates enabled."
-    else
-        echo "Skipping automatic updates setup."
+RM_FIREFOX="NO"
+if [ "$BROWSER" != "None" ]; then
+    if whiptail --title "Remove Firefox" --yesno "You selected $BROWSER. Do you want to remove Firefox entirely?" 10 60; then
+        RM_FIREFOX="YES"
     fi
-    echo
+fi
 
-    read -r -p "Patch Bluetooth keyboard FN key (hid_apple)? (y/N) " patch_hid
-    if [[ "$patch_hid" =~ ^[yY]$ ]]; then
-        hid_apple_patch
-        echo "hid_apple patch applied."
-    else
-        echo "Skipping hid_apple patch."
-    fi
-    echo
+# 3. Code Editor
+EDITOR=$(whiptail --title "Code Editor" --radiolist \
+"Choose your preferred code editor:" 15 60 4 \
+"None" "Skip code editor" ON \
+"Zed" "High-performance Rust editor" OFF \
+"VSCodium" "Telemetry-free VS Code" OFF \
+"NeoVim" "NeoVim + NvChad starter" OFF \
+3>&1 1>&2 2>&3) || exit 0
 
-    read -r -p "Allow Bluetooth keyboard during decryption (regenerate initramfs)? (y/N) " patch_dracut
-    if [[ "$patch_dracut" =~ ^[yY]$ ]]; then
-        add_dracut_flags
-        echo "Dracut flags added."
-    else
-        echo "Skipping dracut flags."
-    fi
-    echo
+# 4. VPN Selection
+VPN=$(whiptail --title "VPN Provider" --radiolist \
+"Choose a VPN provider to install:" 15 60 3 \
+"None" "Skip VPN installation" ON \
+"IVPN" "ivpn.net" OFF \
+"Mullvad" "mullvad.net" OFF \
+3>&1 1>&2 2>&3) || exit 0
 
-    read -r -p "Install a trusted VPN app? (y/N) " vpn_choice
-    if [[ "$vpn_choice" =~ ^[yY]$ ]]; then
-        install_vpn_app
-        echo "VPN app installation complete."
-    else
-        echo "Skipping VPN app installation."
-    fi
-    echo
+# 5. Application Checklist
+APP_OPTS=$(whiptail --title "Additional Applications" --checklist \
+"Select other applications to install:" 15 70 5 \
+"STEAM" "Steam + Latest Proton-GE" OFF \
+"DEV_TOOLS" "Developer Tools (Node, Git, Go, Python)" OFF \
+"WINBOAT" "WinBoat (Seamless Windows Apps via Docker)" OFF \
+"GIT_SSH" "Generate SSH Keys and setup Git Config" OFF \
+3>&1 1>&2 2>&3) || exit 0
+APP_OPTS=$(echo "$APP_OPTS" | tr -d '"')
 
-    read -r -p "Install an alternative browser (not Firefox)? (y/N) " browser_choice
-    if [[ "$browser_choice" =~ ^[yY]$ ]]; then
-        install_browser
-        echo "Browser installation complete."
-    else
-        echo "Default browser (Firefox) will be used."
-    fi
-    echo
+# 6. Git Config (If selected)
+GIT_NAME=""
+GIT_EMAIL=""
+if [[ "$APP_OPTS" == *"GIT_SSH"* ]]; then
+    GIT_NAME=$(whiptail --title "Git Configuration" --inputbox "Enter your Name for Git commits:" 10 60 3>&1 1>&2 2>&3) || exit 0
+    GIT_EMAIL=$(whiptail --title "Git Configuration" --inputbox "Enter your Email for Git commits:" 10 60 3>&1 1>&2 2>&3) || exit 0
+fi
 
-    read -r -p "Install Steam with latest Proton-GE? (y/N) " steam_choice
-    if [[ "$steam_choice" =~ ^[yY]$ ]]; then
-        setup_protonge
-        echo "Steam with Proton-GE setup done."
-    else
-        echo "Skipping Steam & Proton-GE setup..."
-    fi
-    echo
+# 7. Extra Packages
+EXTRA_PKGS=$(whiptail --title "Extra Packages" --inputbox \
+"Enter any additional packages to install via DNF or Flatpak (space-separated, leave blank to skip):" 10 70 3>&1 1>&2 2>&3) || exit 0
 
-    # read -r -p "Install communication apps? (y/N) " comm_choice
-    # if [[ "$comm_choice" =~ ^[yY]$ ]]; then
-    #     install_communication
-    #     echo "Communication apps installed."
-    # else
-    #     echo "Skipping communication apps."
-    # fi
-    # echo
+whiptail --title "Ready to Go" --msgbox "Configuration complete! The system will now execute your choices. Please sit back and wait for it to finish." 10 60
+clear
 
-    read -r -p "Install a code editor? (y/N) " editor_choice
-    if [[ "$editor_choice" =~ ^[yY]$ ]]; then
-        install_code_editor
-        echo "Code editor installation complete."
-    else
-        echo "Skipping code editor installation."
-    fi
-    echo
+# Execute
 
-    read -r -p "Install developer tools (git, nodejs, etc.)? (y/N) " dev_choice
-    if [[ "$dev_choice" =~ ^[yY]$ ]]; then
-        add_dev_tools
-        echo "Developer tools installed."
-    else
-        echo "Skipping developer tools."
-    fi
-    echo
+[[ "$BASE_OPTS" == *"DNF"* ]] && append_dnf_configs
+[[ "$BASE_OPTS" == *"UPDATE"* ]] && sys_update
+[[ "$BASE_OPTS" == *"REPOS"* ]] && add_rpm_repos
+[[ "$BASE_OPTS" == *"AUTO_UPDATES"* ]] && setup_auto_updates
+[[ "$BASE_OPTS" == *"HARDEN"* ]] && sys_hardening
+[[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
+[[ "$BASE_OPTS" == *"NVIDIA"* ]] && install_nvidia
+[[ "$BASE_OPTS" == *"APPLE_KBD"* ]] && hid_apple_patch
+[[ "$BASE_OPTS" == *"DRACUT"* ]] && add_dracut_flags
+[[ "$BASE_OPTS" == *"TOR"* ]] && install_tor
+[[ "$BASE_OPTS" == *"BASH"* ]] && setup_bash_prompt
+[[ "$BASE_OPTS" == *"SECUREBOOT"* ]] && enroll_secureboot
 
-    read -r -p "Generate SSH keys and Git config? (y/N) " config_choice
-    if [[ "$config_choice" =~ ^[yY]$ ]]; then
-        setup_config
-        echo "Done."
-    else
-        echo "Skipping SSH keygen and Git config setup..."
-    fi
-    echo
+[ "$BROWSER" != "None" ] && install_browser "$BROWSER"
+if [ "$RM_FIREFOX" == "YES" ]; then
+    echo -e "\n=> Removing Firefox..."
+    sudo dnf remove firefox -y
+fi
 
-    read -r -p "Install and setup WinBoat to run Windows apps with seamless integration? (y/N) " winboat_choice
-    if [[ "$winboat_choice" =~ ^[yY]$ ]]; then
-        install_winboat
-        echo "WinBoat installed, reboot may be necessary after this script has done running!"
-    else
-        echo "Skipping WinBoat setup."
-    fi
-    echo
+[ "$EDITOR" != "None" ] && install_code_editor "$EDITOR"
+[ "$VPN" != "None" ] && install_vpn_app "$VPN"
 
-    read -r -p "Install Tor and enable Tor service? (y/N) " tor_choice
-    if [[ "$tor_choice" =~ ^[yY]$ ]]; then
-        install_tor
-        echo "Tor installed and enabled."
-    else
-        echo "Skipping Tor installation."
-    fi
-    echo
+[[ "$APP_OPTS" == *"STEAM"* ]] && setup_protonge
+[[ "$APP_OPTS" == *"DEV_TOOLS"* ]] && add_dev_tools
+[[ "$APP_OPTS" == *"WINBOAT"* ]] && install_winboat
+[[ "$APP_OPTS" == *"GIT_SSH"* ]] && setup_config "$GIT_NAME" "$GIT_EMAIL"
 
-    read -r -p "Install additional software packages (e.g. 'discord spotify gimp')? (y/N) " extra_choice
-    if [[ "$extra_choice" =~ ^[yY]$ ]]; then
-        read -r -p "Enter package names (space-separated): " pkg_list
-        echo "Installing: $pkg_list"
-        install_selection "$pkg_list"
-        echo "Optional software installation complete."
-        sleep 1
-    else
-        echo "Skipping optional software installation."
-    fi
-    echo
+[ -n "$EXTRA_PKGS" ] && install_selection "$EXTRA_PKGS"
 
-    read -r -p "Install my simple and clean Bash prompt: 'CLOCK WORKING_DIR GIT_BRANCH $ '? (y/N) " bash_prompt_choice
-    if [[ "$bash_prompt_choice" =~ ^[yY]$ ]]; then
-        echo "Applying the custom Bash prompt..."
-        sleep 2
-        setup_bash_prompt
-        echo "Bash prompt set!"
-    else
-        echo "Skipping Bash prompt setup."
-    fi
-    echo
-
-    read -r -p "Apply some system hardening (usbguard, fail2ban, hardened kernel params, MAC randomization, disable cups and avahi)? (y/N) " harden_choice
-    if [[ "$harden_choice" =~ ^[yY]$ ]]; then
-        echo "Applying system hardening..."
-        sleep 2
-        sys_hardening
-        echo "System hardening applied."
-    else
-        echo "Skipping system hardening."
-    fi
-
-    read -r -p "Enable and enroll Secure Boot? Note that you must have secure boot enabled in your BIOS. (y/N) " enroll_sb
-    if [[ "$enroll_sb" =~ ^[yY]$ ]]; then
-        echo "Enabling and enrolling Secure Boot keys..."
-        sleep 2
-        enroll_secureboot
-        echo "Done, restart your system to apply and verify the keys by running 'sbctl status'..!"
-    else
-        echo "Skipping Secure Boot setup..."
-    fi
-
-    echo "All steps complete and your system is now rock solid. Remember to star this on GitHub, goodbye!"
-else
-    echo "Script cancelled. Goodbye!"
+echo -e "\n\e[32m[*] All steps complete! Your system is now set up and rock solid.\e[0m"
+if [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] || [[ "$APP_OPTS" == *"WINBOAT"* ]]; then
+    echo -e "\e[33m[!] Note: A reboot is highly recommended to apply Secure Boot/WinBoat changes.\e[0m"
 fi
