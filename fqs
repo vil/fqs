@@ -82,8 +82,7 @@ EOF
 
 sys_hardening() {
     echo -e "\n=> Applying System Hardening..."
-    sudo dnf install -y usbguard usbguard-notifier fail2ban
-    sudo usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
+    sudo dnf install -y fail2ban
     sudo systemctl enable --now usbguard fail2ban
 
     local network_file="/etc/NetworkManager/conf.d/00-macrandomize.conf"
@@ -154,6 +153,13 @@ EOF
     sudo sysctl --system
     echo "Disabling cups and avahi-daemon..."
     sudo systemctl disable cups avahi-daemon
+}
+
+setup_usbguard() {
+    echo -e "\n=> Setting up USBGuard..."
+    sudo dnf install -y usbguard usbguard-notifier
+    sudo usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
+    sudo systemctl enable --now usbguard
 }
 
 setup_firewall_drop() {
@@ -300,7 +306,8 @@ BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
 "REPOS" "Enable RPM Fusion & Flathub" ON \
 "DNF" "Optimize DNF Configuration" ON \
 "HARDEN" "Apply System Hardening (Fail2Ban, Sysctl, etc)" ON \
-"FIREWALL" "Set Firewalld default zone to DROP" OFF \
+"FIREWALL" "Set Firewalld default zone to DROP" ON \
+"USBGUARD" "Set up USBGuard to block unauthorized devices" OFF \
 "BASH" "Install custom Bash prompt" ON \
 "AUTO_UPDATES" "Enable DNF-Automatic" OFF \
 "SECUREBOOT" "Enroll Secure Boot Keys (sbctl)" OFF \
@@ -379,6 +386,7 @@ clear
 [[ "$BASE_OPTS" == *"AUTO_UPDATES"* ]] && setup_auto_updates
 [[ "$BASE_OPTS" == *"HARDEN"* ]] && sys_hardening
 [[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
+[[ "$BASE_OPTS" == *"USBGUARD"* ]] && setup_usbguard
 [[ "$BASE_OPTS" == *"NVIDIA"* ]] && install_nvidia
 [[ "$BASE_OPTS" == *"APPLE_KBD"* ]] && hid_apple_patch
 [[ "$BASE_OPTS" == *"DRACUT"* ]] && add_dracut_flags
@@ -402,7 +410,7 @@ fi
 
 [ -n "$EXTRA_PKGS" ] && install_selection "$EXTRA_PKGS"
 
-echo -e "\n\e[32m[*] All steps complete! Your system is now set up and rock solid.\e[0m"
+echo -e "\n\e[32m[+] All steps complete! Your system is now set up and rock solid.\e[0m"
 if [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] || [[ "$APP_OPTS" == *"WINBOAT"* ]]; then
     echo -e "\e[33m[!] Note: A reboot is highly recommended to apply Secure Boot/WinBoat changes.\e[0m"
 fi
