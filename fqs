@@ -340,7 +340,7 @@ fi
 EDITOR=$(whiptail --title "Code Editor" --radiolist \
 "Choose your preferred code editor:" 15 60 4 \
 "None" "Skip code editor" ON \
-"Zed" "High-performance Rust editor" OFF \
+"Zed" "High-performance code editor made using Rust" OFF \
 "VSCodium" "Telemetry-free VS Code" OFF \
 "NeoVim" "NeoVim + NvChad starter" OFF \
 3>&1 1>&2 2>&3) || exit 0

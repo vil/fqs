@@ -55,8 +55,9 @@ Clone the repository:
 
 ```Bash
 git clone https://github.com/vil/fqs.git && cd fqs
-Make the script executable:
 ```
+
+Make the script executable:
 
 ```Bash
 chmod +x fqs
