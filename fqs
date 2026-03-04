@@ -234,7 +234,7 @@ EOF
 
 install_winboat() {
     echo -e "\n=> Installing WinBoat..."
-    sudo dnf install docker docker-compose freerdp.x86_64 -y
+    sudo dnf install podman podman-compose freerdp.x86_64 -y
     echo -e "ip_tables\niptable_nat" | sudo tee /etc/modules-load.d/iptables.conf
     curl -s https://api.github.com/repos/TibixDev/winboat/releases/latest | grep -oP '"browser_download_url": "\K[^"]*\.rpm' | head -1 | xargs curl -L -o /tmp/winboat.rpm
     sudo dnf install /tmp/winboat.rpm -y
@@ -322,8 +322,8 @@ BASE_OPTS=$(echo "$BASE_OPTS" | tr -d '"')
 BROWSER=$(whiptail --title "Web Browser" --radiolist \
 "Choose your preferred browser:" 15 60 6 \
 "None" "Stick with default Firefox" ON \
-"Helium" "Helium.computer (Recommended)" OFF \
-"Trivalent" "Secureblue.dev (Recommended)" OFF \
+"Helium" "helium.computer (Recommended)" OFF \
+"Trivalent" "secureblue.dev (Recommended)" OFF \
 "Brave" "Brave (Will be auto-debloated)" OFF \
 "Chromium" "Open-source Chrome" OFF \
 "Librewolf" "Privacy-focused Firefox fork" OFF \

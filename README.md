@@ -28,7 +28,7 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 
 ### Gaming & Software
 * **Gaming:** Installs Steam along with the latest Proton-GE release.
-* **Windows Apps:** Installs [WinBoat](https://github.com/TibixDev/winboat) for seamless Windows app support via Docker.
+* **Windows Apps:** Installs [WinBoat](https://github.com/TibixDev/winboat) for seamless Windows app support via Podman.
 * **Browsers:** Choose between Helium, Trivalent, Brave (auto-debloated), Chromium, or Librewolf.
 * **Custom Software:** Prompt to install any extra DNF or Flatpak packages you need.
 
