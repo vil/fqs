@@ -83,7 +83,7 @@ EOF
 sys_hardening() {
     echo -e "\n=> Applying System Hardening..."
     sudo dnf install -y fail2ban
-    sudo systemctl enable --now usbguard fail2ban
+    sudo systemctl enable --now fail2ban
 
     local network_file="/etc/NetworkManager/conf.d/00-macrandomize.conf"
     if [ ! -f "$network_file" ]; then
@@ -158,7 +158,8 @@ EOF
 setup_usbguard() {
     echo -e "\n=> Setting up USBGuard..."
     sudo dnf install -y usbguard usbguard-notifier
-    sudo usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
+    usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
+    sudo chmod 0600 /etc/usbguard/rules.conf
     sudo systemctl enable --now usbguard
 }
 
