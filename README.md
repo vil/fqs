@@ -22,6 +22,7 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 
 ### Hardening & Privacy
 * **Kernel & Network:** Applies Secureblue-inspired sysctl hardening, randomizes MAC addresses, and sets Firewalld to DROP.
+* **Hardcore Kernel Hardening Args** Applies "Hardcore" kernel hardening.
 * **Physical Security:** Installs and enables `usbguard` and `fail2ban`.
 * **Secure Boot:** Creates and enrolls custom Secure Boot keys via `sbctl`.
 * **Tor & VPNs:** Easily install the Tor daemon/browser, IVPN, or Mullvad.

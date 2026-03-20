@@ -85,9 +85,9 @@ sys_hardening() {
     sudo dnf install -y fail2ban
     sudo systemctl enable --now fail2ban
 
-    local network_file="/etc/NetworkManager/conf.d/00-macrandomize.conf"
-    if [ ! -f "$network_file" ]; then
-        sudo tee -a "$network_file" >/dev/null <<'EOF'
+    local macrandomize_rule="/etc/NetworkManager/conf.d/00-macrandomize.conf"
+    if [ ! -f "$macrandomize_rule" ]; then
+        sudo tee -a "$macrandomize_rule" >/dev/null <<'EOF'
 [device]
 wifi.scan-rand-mac-address=yes
 
@@ -95,8 +95,17 @@ wifi.scan-rand-mac-address=yes
 wifi.cloned-mac-address=random
 ethernet.cloned-mac-address=random
 EOF
-        sudo systemctl restart NetworkManager
     fi
+
+    local ipv6_privacy_rule="/etc/NetworkManager/conf.d/00-ipv6-privacy.conf"
+    if [ ! -f "$ipv6_privacy_rule" ]; then
+        sudo tee -a "$ipv6_privacy_rule" >/dev/null <<'EOF'
+[connection]
+ipv6.ip6-privacy=2
+EOF
+    fi
+
+    sudo systemctl restart NetworkManager
 
     echo "Applying sysctl hardening..."
     local sysctl_file="/etc/sysctl.d/55-hardening.conf"
@@ -153,6 +162,21 @@ EOF
     sudo sysctl --system
     echo "Disabling cups and avahi-daemon..."
     sudo systemctl disable cups avahi-daemon
+}
+
+hardcore_kernel_args() {
+    echo -e "\n=> Applying hardcore kernel hardening arguments..."
+    sudo grubby --update-kernel=ALL --args="\
+        module.sig_enforce=1 \
+        lockdown=confidentiality \
+        kptr_restrict=2 \
+        spec_store_bypass_disable=on \
+        pti=on \
+        l1tf=full,force \
+        mds=full,nosmt \
+        tsx=off \
+        spectre_v2=on \
+        ipv6.disable=1"
 }
 
 setup_usbguard() {
@@ -309,6 +333,7 @@ BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
 "HARDEN" "Apply System Hardening (Fail2Ban, Sysctl, etc)" ON \
 "FIREWALL" "Set Firewalld default zone to DROP" ON \
 "USBGUARD" "Set up USBGuard to block unauthorized devices" OFF \
+"KERNEL" "Apply Hardcore Kernel Hardening" OFF \
 "BASH" "Install custom Bash prompt" ON \
 "AUTO_UPDATES" "Enable DNF-Automatic" OFF \
 "SECUREBOOT" "Enroll Secure Boot Keys (sbctl)" OFF \
@@ -388,6 +413,7 @@ clear
 [[ "$BASE_OPTS" == *"HARDEN"* ]] && sys_hardening
 [[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
 [[ "$BASE_OPTS" == *"USBGUARD"* ]] && setup_usbguard
+[[ "$BASE_OPTS" == *"KERNEL"* ]] && hardcore_kernel_args
 [[ "$BASE_OPTS" == *"NVIDIA"* ]] && install_nvidia
 [[ "$BASE_OPTS" == *"APPLE_KBD"* ]] && hid_apple_patch
 [[ "$BASE_OPTS" == *"DRACUT"* ]] && add_dracut_flags
