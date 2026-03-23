@@ -3,7 +3,7 @@
 # |----------------------------------------------------------|
 # | Copyright (c) 2024-2026 Vili <https://vili.dev>. GPL-3.0 |
 # |----------------------------------------------------------|
-#                       Made in Finland.
+#                    Made in Finland.
 
 set -euo pipefail
 
@@ -80,11 +80,14 @@ EOF
     sudo systemctl enable --now dnf-automatic.timer
 }
 
-sys_hardening() {
-    echo -e "\n=> Applying System Hardening..."
+install_fail2ban() {
+    echo -e "\n=> Installing and enabling Fail2Ban..."
     sudo dnf install -y fail2ban
     sudo systemctl enable --now fail2ban
+}
 
+mac_randomization() {
+    echo -e "\n=> Enabling MAC Randomization..."
     local macrandomize_rule="/etc/NetworkManager/conf.d/00-macrandomize.conf"
     if [ ! -f "$macrandomize_rule" ]; then
         sudo tee -a "$macrandomize_rule" >/dev/null <<'EOF'
@@ -96,7 +99,11 @@ wifi.cloned-mac-address=random
 ethernet.cloned-mac-address=random
 EOF
     fi
+    sudo systemctl restart NetworkManager
+}
 
+ipv6_privacy() {
+    echo -e "\n=> Enabling IPv6 Privacy Extensions..."
     local ipv6_privacy_rule="/etc/NetworkManager/conf.d/00-ipv6-privacy.conf"
     if [ ! -f "$ipv6_privacy_rule" ]; then
         sudo tee -a "$ipv6_privacy_rule" >/dev/null <<'EOF'
@@ -104,10 +111,11 @@ EOF
 ipv6.ip6-privacy=2
 EOF
     fi
-
     sudo systemctl restart NetworkManager
+}
 
-    echo "Applying sysctl hardening..."
+sysctl_hardening() {
+    echo -e "\n=> Applying sysctl hardening..."
     local sysctl_file="/etc/sysctl.d/55-hardening.conf"
     sudo tee "$sysctl_file" >/dev/null <<'EOF'
 net.ipv4.tcp_syncookies = 1
@@ -117,17 +125,24 @@ net.ipv4.icmp_ignore_bogus_error_responses = 1
 net.ipv4.tcp_timestamps = 0
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.default.rp_filter = 1
-net.ipv4.conf.*.send_redirects = 0
-net.ipv4.conf.*.accept_redirects = 0
-net.ipv6.conf.*.accept_redirects = 0
-net.ipv4.conf.*.shared_media = 0
-net.ipv4.conf.*.arp_filter = 1
-net.ipv4.conf.*.arp_ignore = 2
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.default.secure_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.shared_media = 0
+net.ipv4.conf.all.arp_filter = 1
+net.ipv4.conf.all.arp_ignore = 2
 net.ipv4.conf.all.drop_gratuitous_arp = 1
-net.ipv4.conf.*.accept_source_route = 0
-net.ipv6.conf.*.accept_source_route = 0
-net.ipv4.tcp_sack=0
-net.ipv4.tcp_dsack=0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.default.accept_source_route = 0
+net.ipv4.tcp_sack = 0
+net.ipv4.tcp_dsack = 0
 net.ipv6.conf.all.use_tempaddr = 2
 net.ipv6.conf.default.use_tempaddr = 2
 net.ipv4.conf.all.log_martians = 1
@@ -138,9 +153,9 @@ kernel.sysrq = 0
 kernel.perf_event_paranoid = 3
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
-kernel.oops_limit=100
-kernel.warn_limit=100
-kernel.panic=-1
+kernel.oops_limit = 100
+kernel.warn_limit = 100
+kernel.panic = -1
 fs.binfmt_misc.status = 0
 fs.suid_dumpable = 0
 fs.protected_regular = 2
@@ -160,8 +175,64 @@ vm.mmap_min_addr = 65536
 vm.max_map_count = 1048576
 EOF
     sudo sysctl --system
-    echo "Disabling cups and avahi-daemon..."
-    sudo systemctl disable cups avahi-daemon
+}
+
+disable_cups_avahi() {
+    echo -e "\n=> Disabling CUPS and Avahi-daemon..."
+    sudo systemctl disable --now cups avahi-daemon
+}
+
+disable_wifi() {
+    echo -e "\n=> Completely disabling Wi-Fi capability..."
+    sudo nmcli radio wifi off || true
+    sudo rfkill block wifi || true
+    sudo systemctl disable --now wpa_supplicant
+    echo "install iwlwifi /bin/true" | sudo tee /etc/modprobe.d/disable-wifi.conf >/dev/null
+    echo "install iwlmvm /bin/true" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
+    echo "install rt2800pci /bin/true" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
+    echo "install ath9k /bin/true" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
+}
+
+disable_bluetooth() {
+    echo -e "\n=> Completely disabling Bluetooth capability..."
+    sudo systemctl disable --now bluetooth
+    sudo rfkill block bluetooth || true
+    echo "install btusb /bin/true" | sudo tee /etc/modprobe.d/disable-bluetooth.conf >/dev/null
+    echo "install bluetooth /bin/true" | sudo tee -a /etc/modprobe.d/disable-bluetooth.conf >/dev/null
+}
+
+disable_webcam() {
+    echo -e "\n=> Completely disabling Webcam capability..."
+    echo "install uvcvideo /bin/true" | sudo tee /etc/modprobe.d/disable-webcam.conf >/dev/null
+}
+
+disable_obscure_fs() {
+    echo -e "\n=> Disabling obscure filesystems..."
+    local fs_list="cramfs freevxfs jffs2 hfs hfsplus squashfs udf"
+    for fs in $fs_list; do
+        echo "install $fs /bin/true" | sudo tee -a /etc/modprobe.d/disable-fs.conf >/dev/null
+    done
+}
+
+enable_secure_dns() {
+    local dns_ips="$1"
+    echo -e "\n=> Enabling System-wide DNS-over-TLS (DoT) with IPs: $dns_ips"
+    sudo mkdir -p /etc/systemd/resolved.conf.d
+    sudo tee /etc/systemd/resolved.conf.d/dns_over_tls.conf >/dev/null <<EOF
+[Resolve]
+DNS=$dns_ips
+DNSOverTLS=yes
+EOF
+    sudo systemctl restart systemd-resolved
+}
+
+strict_flatpak_overrides() {
+    echo -e "\n=> Applying Strict Flatpak Overrides & Installing Flatseal..."
+    sudo flatpak override --nofilesystem=host
+    sudo flatpak override --nofilesystem=home
+    sudo flatpak override --nodevice=all
+    sudo dnf install flatpak -y >/dev/null
+    flatpak install -y flathub com.github.tchx84.Flatseal || echo "Warning: Flatseal failed to install."
 }
 
 hardcore_kernel_args() {
@@ -326,11 +397,18 @@ whiptail --title "FQS (Fedora Quick Start)" --msgbox "Welcome to the Fedora Quic
 
 # 1. Base Configuration Checklist
 BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
-"Select system tweaks to apply (Space to select, Enter to confirm):" 22 75 12 \
+"Select system tweaks to apply (Space to select, Enter to confirm):" 29 80 20 \
 "UPDATE" "Perform Full System Upgrade" ON \
 "REPOS" "Enable RPM Fusion & Flathub" ON \
 "DNF" "Optimize DNF Configuration" ON \
-"HARDEN" "Apply System Hardening (Fail2Ban, Sysctl, etc)" ON \
+"FAIL2BAN" "Install and enable Fail2Ban" ON \
+"MAC_RAND" "Enable MAC Address Randomization" ON \
+"IPV6_PRIV" "Enable IPv6 Privacy Extensions" ON \
+"SYSCTL" "Apply Sysctl Kernel Hardening" ON \
+"FLATPAK_STRICT" "Strict Flatpak Overrides & Install Flatseal" OFF \
+"SECURE_DNS" "Enable System-wide DNS-over-TLS (DoT)" OFF \
+"DIS_FS" "Disable obscure filesystems (cramfs, hfs, udf, etc.)" OFF \
+"DIS_PRINTERS" "Disable CUPS & Avahi (Printers/Discovery)" ON \
 "FIREWALL" "Set Firewalld default zone to DROP" ON \
 "USBGUARD" "Set up USBGuard to block unauthorized devices" OFF \
 "KERNEL" "Apply Hardcore Kernel Hardening" OFF \
@@ -341,8 +419,32 @@ BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
 "NVIDIA" "Install Nvidia Drivers (akmod-nvidia)" OFF \
 "APPLE_KBD" "Patch Apple Keyboard FN key (hid_apple)" OFF \
 "DRACUT" "Allow BT keyboard during LUKS decryption" OFF \
+"DIS_WIFI" "Completely Disable Wi-Fi (Modprobe & NM)" OFF \
+"DIS_BT" "Completely Disable Bluetooth (Modprobe & RFKill)" OFF \
+"DIS_WEBCAM" "Completely Disable Webcam (uvcvideo)" OFF \
 3>&1 1>&2 2>&3) || exit 0
 BASE_OPTS=$(echo "$BASE_OPTS" | tr -d '"')
+
+# 1.5 Secure DNS Provider (If selected)
+DNS_IPS=""
+if [[ "$BASE_OPTS" == *"SECURE_DNS"* ]]; then
+    DNS_CHOICE=$(whiptail --title "Secure DNS Provider" --radiolist \
+    "Choose a DNS-over-TLS provider:" 15 70 4 \
+    "Cloudflare" "1.1.1.1 (Fast, Privacy-focused)" ON \
+    "Quad9" "9.9.9.9 (Malware blocking)" OFF \
+    "AdGuard" "94.140.14.14 (Ad & Tracker blocking)" OFF \
+    "Custom" "Enter your own IPs (Space separated)" OFF \
+    3>&1 1>&2 2>&3) || exit 0
+
+    case "$DNS_CHOICE" in
+        "Cloudflare") DNS_IPS="1.1.1.1 1.0.0.1 2606:4700:4700::1111 2606:4700:4700::1001" ;;
+        "Quad9") DNS_IPS="9.9.9.9 149.112.112.112 2620:fe::fe 2620:fe::9" ;;
+        "AdGuard") DNS_IPS="94.140.14.14 94.140.15.15 2a10:50c0::ad1:ff 2a10:50c0::ad2:ff" ;;
+        "Custom")
+            DNS_IPS=$(whiptail --title "Custom DNS" --inputbox "Enter DNS IPs (IPv4 and/or IPv6, space-separated):" 10 70 3>&1 1>&2 2>&3) || exit 0
+            ;;
+    esac
+fi
 
 # 2. Browser Selection
 BROWSER=$(whiptail --title "Web Browser" --radiolist \
@@ -410,7 +512,17 @@ clear
 [[ "$BASE_OPTS" == *"UPDATE"* ]] && sys_update
 [[ "$BASE_OPTS" == *"REPOS"* ]] && add_rpm_repos
 [[ "$BASE_OPTS" == *"AUTO_UPDATES"* ]] && setup_auto_updates
-[[ "$BASE_OPTS" == *"HARDEN"* ]] && sys_hardening
+[[ "$BASE_OPTS" == *"FAIL2BAN"* ]] && install_fail2ban
+[[ "$BASE_OPTS" == *"MAC_RAND"* ]] && mac_randomization
+[[ "$BASE_OPTS" == *"IPV6_PRIV"* ]] && ipv6_privacy
+[[ "$BASE_OPTS" == *"SYSCTL"* ]] && sysctl_hardening
+[[ "$BASE_OPTS" == *"FLATPAK_STRICT"* ]] && strict_flatpak_overrides
+[[ "$BASE_OPTS" == *"SECURE_DNS"* ]] && enable_secure_dns "$DNS_IPS"
+[[ "$BASE_OPTS" == *"DIS_FS"* ]] && disable_obscure_fs
+[[ "$BASE_OPTS" == *"DIS_PRINTERS"* ]] && disable_cups_avahi
+[[ "$BASE_OPTS" == *"DIS_WIFI"* ]] && disable_wifi
+[[ "$BASE_OPTS" == *"DIS_BT"* ]] && disable_bluetooth
+[[ "$BASE_OPTS" == *"DIS_WEBCAM"* ]] && disable_webcam
 [[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
 [[ "$BASE_OPTS" == *"USBGUARD"* ]] && setup_usbguard
 [[ "$BASE_OPTS" == *"KERNEL"* ]] && hardcore_kernel_args

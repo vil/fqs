@@ -22,7 +22,10 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 
 ### Hardening & Privacy
 * **Kernel & Network:** Applies Secureblue-inspired sysctl hardening, randomizes MAC addresses, and sets Firewalld to DROP.
-* **Hardcore Kernel Hardening Args** Applies "Hardcore" kernel hardening.
+* **Hardcore Kernel Hardening Args:** Applies "Hardcore" kernel hardening arguments via GRUB.
+* **Strict Flatpak Overrides:** Revokes overly broad filesystem and device permissions globally, and installs Flatseal so you can selectively re-enable access per app.
+* **Secure DNS (DoT):** Enables system-wide DNS-over-TLS via `systemd-resolved` with selectable providers (Cloudflare, Quad9, AdGuard, or Custom IPs).
+* **Filesystem Security:** Blacklists obscure, historically vulnerable filesystems (`cramfs`, `hfs`, `udf`, etc.) to prevent kernel exploits via malicious media.
 * **Physical Security:** Installs and enables `usbguard` and `fail2ban`.
 * **Secure Boot:** Creates and enrolls custom Secure Boot keys via `sbctl`.
 * **Tor & VPNs:** Easily install the Tor daemon/browser, IVPN, or Mullvad.
@@ -46,7 +49,7 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 You can run this script with a single command without downloading it manually:
 
 ```bash
-sh -c "$(curl -sS https://raw.githubusercontent.com/vil/fqs/master/fqs)"
+sh -c "$(curl -sS [https://raw.githubusercontent.com/vil/fqs/master/fqs](https://raw.githubusercontent.com/vil/fqs/master/fqs))"
 ```
 
 ## Installation
@@ -54,19 +57,19 @@ If you prefer to clone the repository and review the code locally before running
 
 Clone the repository:
 
-```Bash
-git clone https://github.com/vil/fqs.git && cd fqs
+```bash
+git clone [https://github.com/vil/fqs.git](https://github.com/vil/fqs.git) && cd fqs
 ```
 
 Make the script executable:
 
-```Bash
+```bash
 chmod +x fqs
 ```
 
 Run the script:
 
-```Bash
+```bash
 ./fqs
 ```
 
