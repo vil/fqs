@@ -27,12 +27,13 @@ sys_update() {
     sudo dnf upgrade --refresh -y
 }
 
-add_rpm_repos() {
-    echo -e "\n=> Adding RPM Fusion and Flathub..."
+setup_repos() {
+    echo -e "\n=> Adding RPM Fusion, Terra, and Flathub..."
     local fedora_ver
     fedora_ver="$(rpm -E %fedora)"
     sudo dnf install -y "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_ver}.noarch.rpm" \
                         "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm"
+    sudo dnf install --nogpgcheck --repofrompath "terra,https://repos.fyralabs.com/terra${fedora_ver}" terra-release -y
     sudo dnf install -y dnf-plugins-core
     sudo dnf group upgrade core -y
 
@@ -286,7 +287,7 @@ install_vpn_app() {
 install_code_editor() {
     echo -e "\n=> Installing Editor ($1)..."
     case "$1" in
-        "Zed") curl -f https://zed.dev/install.sh | sh ;;
+        "Zed") sudo dnf install zed -y ;;
         "VSCodium")
             sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
             printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=VSCodium Repository\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h\n" | sudo tee /etc/yum.repos.d/vscodium.repo
@@ -510,7 +511,7 @@ clear
 
 [[ "$BASE_OPTS" == *"DNF"* ]] && append_dnf_configs
 [[ "$BASE_OPTS" == *"UPDATE"* ]] && sys_update
-[[ "$BASE_OPTS" == *"REPOS"* ]] && add_rpm_repos
+[[ "$BASE_OPTS" == *"REPOS"* ]] && setup_repos
 [[ "$BASE_OPTS" == *"AUTO_UPDATES"* ]] && setup_auto_updates
 [[ "$BASE_OPTS" == *"FAIL2BAN"* ]] && install_fail2ban
 [[ "$BASE_OPTS" == *"MAC_RAND"* ]] && mac_randomization
