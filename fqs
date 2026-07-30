@@ -209,10 +209,13 @@ disable_webcam() {
 
 disable_obscure_fs() {
     echo -e "\n=> Disabling obscure filesystems..."
-    local fs_list="cramfs freevxfs jffs2 hfs hfsplus squashfs udf"
-    for fs in $fs_list; do
-        echo "install $fs /bin/true" | sudo tee -a /etc/modprobe.d/disable-fs.conf >/dev/null
-    done
+    local conf_file="/etc/modprobe.d/disable-fs.conf"
+    if [ ! -f "$conf_file" ]; then
+        local fs_list="cramfs freevxfs jffs2 hfs hfsplus squashfs udf"
+        for fs in $fs_list; do
+            echo "install $fs /bin/true" | sudo tee -a "$conf_file" >/dev/null
+        done
+    fi
 }
 
 enable_secure_dns() {
@@ -349,15 +352,21 @@ install_nvidia() {
 
 hid_apple_patch() {
     echo -e "\n=> Patching Apple Keyboard (hid_apple)..."
-    echo "options hid_apple fnmode=0" | sudo tee -a /etc/modprobe.d/hid_apple.conf
+    local conf_file="/etc/modprobe.d/hid_apple.conf"
+    if ! grep -q "hid_apple fnmode" "$conf_file" 2>/dev/null; then
+        echo "options hid_apple fnmode=0" | sudo tee -a "$conf_file" >/dev/null
+    fi
     sudo modprobe -r hid_apple || true
     sudo modprobe hid_apple
 }
 
 add_dracut_flags() {
     echo -e "\n=> Adding Dracut Flags (Bluetooth Decryption)..."
-    echo 'hostonly="yes"' | sudo tee -a /etc/dracut.conf.d/flags.conf
-    echo 'add_dracutmodules+=" bluetooth "' | sudo tee -a /etc/dracut.conf.d/flags.conf
+    local conf_file="/etc/dracut.conf.d/flags.conf"
+    if ! grep -q "hostonly" "$conf_file" 2>/dev/null; then
+        echo 'hostonly="yes"' | sudo tee -a "$conf_file" >/dev/null
+        echo 'add_dracutmodules+=" bluetooth "' | sudo tee -a "$conf_file" >/dev/null
+    fi
     sudo dracut --regenerate-all --force --verbose
 }
 
@@ -377,17 +386,21 @@ install_selection() {
 
 setup_bash_prompt() {
     echo -e "\n=> Setting up Bash Prompt..."
-    tee -a "$HOME/.bashrc" >/dev/null <<'EOF'
+    if ! grep -q "PS1_CMD1" "$HOME/.bashrc" 2>/dev/null; then
+        tee -a "$HOME/.bashrc" >/dev/null <<'EOF'
 # Vili's Bash prompt
 PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)'
 PS1='\[\e[2m\]\t\[\e[0m\] \w ${PS1_CMD1} \$ '
 EOF
+    fi
 }
 
 setup_config() {
     echo -e "\n=> Setting up SSH and Git..."
     if ! command_exists git; then sudo dnf install git -y; fi
-    ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -N ""
+    if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+        ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -N ""
+    fi
     git config --global user.name "$1"
     git config --global user.email "$2"
 }
