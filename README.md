@@ -49,7 +49,7 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 You can run this script with a single command without downloading it manually:
 
 ```bash
-sh -c "$(curl -sS [https://raw.githubusercontent.com/vil/fqs/master/fqs](https://raw.githubusercontent.com/vil/fqs/master/fqs))"
+sh -c "$(curl -sS https://raw.githubusercontent.com/vil/fqs/master/fqs)"
 ```
 
 ## Installation
