@@ -58,7 +58,7 @@ If you prefer to clone the repository and review the code locally before running
 Clone the repository:
 
 ```bash
-git clone [https://github.com/vil/fqs.git](https://github.com/vil/fqs.git) && cd fqs
+git clone https://github.com/vil/fqs.git && cd fqs
 ```
 
 Make the script executable:
