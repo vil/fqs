@@ -332,12 +332,13 @@ EOF
     esac
 }
 
-install_winboat() {
-    echo -e "\n=> Installing WinBoat..."
-    sudo dnf install podman podman-compose freerdp.x86_64 -y
-    echo -e "ip_tables\niptable_nat" | sudo tee /etc/modules-load.d/iptables.conf
-    curl -s https://api.github.com/repos/TibixDev/winboat/releases/latest | grep -oP '"browser_download_url": "\K[^"]*\.rpm' | head -1 | xargs curl -L -o /tmp/winboat.rpm
-    sudo dnf install /tmp/winboat.rpm -y
+install_virtmanager() {
+    echo -e "\n=> Installing virt-manager..."
+    sudo dnf install virt-manager -y
+    # Add user to libvirt group
+    sudo usermod -aG libvirt "$USER"
+    # Restart libvirt service
+    sudo systemctl restart libvirtd
 }
 
 add_dev_tools() {
@@ -500,7 +501,7 @@ APP_OPTS=$(whiptail --title "Additional Applications" --checklist \
 "Select other applications to install:" 15 70 5 \
 "STEAM" "Steam + Latest Proton-GE" OFF \
 "DEV_TOOLS" "Developer Tools (Node, Git, Go, Python)" OFF \
-"WINBOAT" "WinBoat (Seamless Windows Apps via Docker)" OFF \
+"VIRTMANAGER" "virt-manager (Virtual Machine Manager)" OFF \
 "GIT_SSH" "Generate SSH Keys and setup Git Config" OFF \
 3>&1 1>&2 2>&3) || exit 0
 APP_OPTS=$(echo "$APP_OPTS" | tr -d '"')
@@ -537,7 +538,6 @@ clear
 [[ "$BASE_OPTS" == *"DIS_WIFI"* ]] && disable_wifi
 [[ "$BASE_OPTS" == *"DIS_BT"* ]] && disable_bluetooth
 [[ "$BASE_OPTS" == *"DIS_WEBCAM"* ]] && disable_webcam
-[[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
 [[ "$BASE_OPTS" == *"USBGUARD"* ]] && setup_usbguard
 [[ "$BASE_OPTS" == *"KERNEL"* ]] && hardcore_kernel_args
 [[ "$BASE_OPTS" == *"NVIDIA"* ]] && install_nvidia
@@ -546,6 +546,7 @@ clear
 [[ "$BASE_OPTS" == *"TOR"* ]] && install_tor
 [[ "$BASE_OPTS" == *"BASH"* ]] && setup_bash_prompt
 [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] && enroll_secureboot
+[[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
 
 [ "$BROWSER" != "None" ] && install_browser "$BROWSER"
 if [ "$RM_FIREFOX" == "YES" ]; then
@@ -558,12 +559,12 @@ fi
 
 [[ "$APP_OPTS" == *"STEAM"* ]] && setup_protonge
 [[ "$APP_OPTS" == *"DEV_TOOLS"* ]] && add_dev_tools
-[[ "$APP_OPTS" == *"WINBOAT"* ]] && install_winboat
+[[ "$APP_OPTS" == *"VIRTMANAGER"* ]] && install_virtmanager
 [[ "$APP_OPTS" == *"GIT_SSH"* ]] && setup_config "$GIT_NAME" "$GIT_EMAIL"
 
 [ -n "$EXTRA_PKGS" ] && install_selection "$EXTRA_PKGS"
 
 echo -e "\n\e[32m[+] All steps complete! Your system is now set up and rock solid.\e[0m"
-if [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] || [[ "$APP_OPTS" == *"WINBOAT"* ]]; then
-    echo -e "\e[33m[!] Note: A reboot is highly recommended to apply Secure Boot/WinBoat changes.\e[0m"
+if [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] || [[ "$APP_OPTS" == *"VIRTMANAGER"* ]]; then
+    echo -e "\e[33m[!] Note: A reboot is highly recommended to apply Secure Boot/virt-manager changes.\e[0m"
 fi
