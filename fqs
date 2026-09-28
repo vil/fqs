@@ -49,10 +49,11 @@ append_dnf_configs() {
     if ! grep -q "max_parallel_downloads" "$conf_file"; then
         sudo tee -a "$conf_file" >/dev/null <<'EOF'
 gpgcheck=1
+localpkg_gpgcheck=1
 clean_requirements_on_remove=True
 skip_if_unavailable=True
 deltarpm=False
-best=False
+best=True
 keepcache=True
 installonly_limit=3
 max_parallel_downloads=10
@@ -100,7 +101,20 @@ wifi.cloned-mac-address=random
 ethernet.cloned-mac-address=random
 EOF
     fi
-    sudo systemctl restart NetworkManager
+}
+
+prevent_sending_dhcp_hostname() {
+    echo -e "\n=> Preventing sending DHCP hostname..."
+    local dhcp_hostname_rule="/etc/NetworkManager/conf.d/10-dhcp-hostname.conf"
+    if [ ! -f "$dhcp_hostname_rule" ]; then
+        sudo tee -a "$dhcp_hostname_rule" >/dev/null <<'EOF'
+[connection]
+# Prevent sending machine hostname to DHCP server.
+# Hostname leakage allows network operators to identify and track devices.
+ipv4.dhcp-send-hostname=false
+ipv6.dhcp-send-hostname=false
+EOF
+    fi
 }
 
 ipv6_privacy() {
@@ -112,7 +126,6 @@ ipv6_privacy() {
 ipv6.ip6-privacy=2
 EOF
     fi
-    sudo systemctl restart NetworkManager
 }
 
 sysctl_hardening() {
@@ -226,8 +239,15 @@ enable_secure_dns() {
 [Resolve]
 DNS=$dns_ips
 DNSOverTLS=yes
+DNSSEC=yes
+DNSStubListener=yes
 EOF
+}
+
+restart_networking_stack() {
+    echo -e "\n=> Restarting networking stack..."
     sudo systemctl restart systemd-resolved
+    sudo systemctl restart NetworkManager
 }
 
 strict_flatpak_overrides() {
@@ -273,7 +293,7 @@ enroll_secureboot() {
     sudo dnf copr enable chenxiaolong/sbctl -y
     sudo dnf install sbctl -y
     sudo sbctl create-keys
-    sudo sbctl enroll-keys -m
+    sudo sbctl enroll-keys -m --ignore-immutable
 }
 
 install_vpn_app() {
@@ -445,8 +465,8 @@ DNS_IPS=""
 if [[ "$BASE_OPTS" == *"SECURE_DNS"* ]]; then
     DNS_CHOICE=$(whiptail --title "Secure DNS Provider" --radiolist \
     "Choose a DNS-over-TLS provider:" 15 70 4 \
-    "Cloudflare" "1.1.1.1 (Fast, Privacy-focused)" ON \
-    "Quad9" "9.9.9.9 (Malware blocking)" OFF \
+    "Cloudflare" "1.1.1.1 (Fast, Privacy-focused)" OFF \
+    "Quad9" "9.9.9.9 (Malware blocking)" ON \
     "AdGuard" "94.140.14.14 (Ad & Tracker blocking)" OFF \
     "Custom" "Enter your own IPs (Space separated)" OFF \
     3>&1 1>&2 2>&3) || exit 0
@@ -564,6 +584,9 @@ fi
 [ -n "$EXTRA_PKGS" ] && install_selection "$EXTRA_PKGS"
 
 [[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
+
+# Restart networking stack last to prevent timing out during updates/installs
+restart_networking_stack
 
 echo -e "\n\e[32m[+] All steps complete! Your system is now set up and rock solid.\e[0m"
 if [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] || [[ "$APP_OPTS" == *"VIRTMANAGER"* ]]; then
