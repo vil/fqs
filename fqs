@@ -546,7 +546,6 @@ clear
 [[ "$BASE_OPTS" == *"TOR"* ]] && install_tor
 [[ "$BASE_OPTS" == *"BASH"* ]] && setup_bash_prompt
 [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] && enroll_secureboot
-[[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
 
 [ "$BROWSER" != "None" ] && install_browser "$BROWSER"
 if [ "$RM_FIREFOX" == "YES" ]; then
@@ -563,6 +562,8 @@ fi
 [[ "$APP_OPTS" == *"GIT_SSH"* ]] && setup_config "$GIT_NAME" "$GIT_EMAIL"
 
 [ -n "$EXTRA_PKGS" ] && install_selection "$EXTRA_PKGS"
+
+[[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
 
 echo -e "\n\e[32m[+] All steps complete! Your system is now set up and rock solid.\e[0m"
 if [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] || [[ "$APP_OPTS" == *"VIRTMANAGER"* ]]; then
