@@ -438,6 +438,7 @@ BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
 "DNF" "Optimize DNF Configuration" ON \
 "FAIL2BAN" "Install and enable Fail2Ban" ON \
 "MAC_RAND" "Enable MAC Address Randomization" ON \
+"HOSTNAME_SENDING" "Prevent sending hostname to DHCP" ON \
 "IPV6_PRIV" "Enable IPv6 Privacy Extensions" ON \
 "SYSCTL" "Apply Sysctl Kernel Hardening" ON \
 "FLATPAK_STRICT" "Strict Flatpak Overrides & Install Flatseal" OFF \
@@ -549,6 +550,7 @@ clear
 [[ "$BASE_OPTS" == *"AUTO_UPDATES"* ]] && setup_auto_updates
 [[ "$BASE_OPTS" == *"FAIL2BAN"* ]] && install_fail2ban
 [[ "$BASE_OPTS" == *"MAC_RAND"* ]] && mac_randomization
+[[ "$BASE_OPTS" == *"HOSTNAME_SENDING"* ]] && prevent_sending_dhcp_hostname
 [[ "$BASE_OPTS" == *"IPV6_PRIV"* ]] && ipv6_privacy
 [[ "$BASE_OPTS" == *"SYSCTL"* ]] && sysctl_hardening
 [[ "$BASE_OPTS" == *"FLATPAK_STRICT"* ]] && strict_flatpak_overrides

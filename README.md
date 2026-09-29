@@ -16,8 +16,8 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 
 ### Core System
 * **Updates:** Performs a full system upgrade.
-* **Repositories:** Enables RPM Fusion (Free/Non-Free) and Flathub.
-* **DNF Optimization:** Configures `dnf.conf` for parallel downloads, caching, and better speed.
+* **Repositories:** Enables RPM Fusion (Free/Non-Free), Flathub and Terra repositories.
+* **DNF Optimization:** Configures `dnf.conf` for parallel downloads, security, caching, and better speed.
 * **Automation:** Optionally sets up `dnf-automatic` for silent security updates.
 
 ### Hardening & Privacy
@@ -32,7 +32,7 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 
 ### Gaming & Software
 * **Gaming:** Installs Steam along with the latest Proton-GE release.
-* **Windows Apps:** Installs [WinBoat](https://github.com/TibixDev/winboat) for seamless Windows app support via Podman.
+* **Virtualization:** Installs virt-manager for managing virtual machines.
 * **Browsers:** Choose between Helium, Trivalent, Brave (auto-debloated), Chromium, or Librewolf.
 * **Custom Software:** Prompt to install any extra DNF or Flatpak packages you need.
 
