@@ -36,6 +36,7 @@ setup_repos() {
     sudo dnf install --nogpgcheck --repofrompath "terra,https://repos.fyralabs.com/terra${fedora_ver}" terra-release -y
     sudo dnf install -y dnf-plugins-core
     sudo dnf group upgrade core -y
+    sudo dnf install -y terra-release-extras terra-release-mesa
 
     if ! command_exists flatpak; then
         sudo dnf install flatpak -y
@@ -49,7 +50,7 @@ append_dnf_configs() {
     if ! grep -q "max_parallel_downloads" "$conf_file"; then
         sudo tee -a "$conf_file" >/dev/null <<'EOF'
 gpgcheck=1
-localpkg_gpgcheck=1
+#localpkg_gpgcheck=1
 clean_requirements_on_remove=True
 skip_if_unavailable=True
 deltarpm=False
