@@ -195,6 +195,13 @@ EOF
 disable_cups_avahi() {
     echo -e "\n=> Disabling CUPS and Avahi-daemon..."
     sudo systemctl disable --now cups avahi-daemon
+    sudo systemctl mask cups avahi-daemon
+}
+
+disable_modem_manager() {
+    echo -e "\n=> Disabling modem manager..."
+    sudo systemctl disable --now ModemManager
+    sudo systemctl mask ModemManager
 }
 
 disable_wifi() {
@@ -446,6 +453,7 @@ BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
 "SECURE_DNS" "Enable System-wide DNS-over-TLS (DoT)" OFF \
 "DIS_FS" "Disable obscure filesystems (cramfs, hfs, udf, etc.)" OFF \
 "DIS_PRINTERS" "Disable CUPS & Avahi (Printers/Discovery)" ON \
+"DIS_MODEM" "Disable Modem Manager (SIM card support)" ON \
 "FIREWALL" "Set Firewalld default zone to DROP" ON \
 "USBGUARD" "Set up USBGuard to block unauthorized devices" OFF \
 "KERNEL" "Apply Hardcore Kernel Hardening" OFF \
@@ -558,6 +566,7 @@ clear
 [[ "$BASE_OPTS" == *"SECURE_DNS"* ]] && enable_secure_dns "$DNS_IPS"
 [[ "$BASE_OPTS" == *"DIS_FS"* ]] && disable_obscure_fs
 [[ "$BASE_OPTS" == *"DIS_PRINTERS"* ]] && disable_cups_avahi
+[[ "$BASE_OPTS" == *"DIS_MODEM"* ]] && disable_modem_manager
 [[ "$BASE_OPTS" == *"DIS_WIFI"* ]] && disable_wifi
 [[ "$BASE_OPTS" == *"DIS_BT"* ]] && disable_bluetooth
 [[ "$BASE_OPTS" == *"DIS_WEBCAM"* ]] && disable_webcam
