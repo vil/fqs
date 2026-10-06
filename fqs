@@ -204,38 +204,117 @@ disable_modem_manager() {
     sudo systemctl mask ModemManager
 }
 
+disable_geoclue_service() {
+    echo -e "\n=> Disabling geoclue service..."
+    sudo systemctl disable --now geoclue
+    sudo systemctl mask geoclue
+}
+
 disable_wifi() {
     echo -e "\n=> Completely disabling Wi-Fi capability..."
     sudo nmcli radio wifi off || true
     sudo rfkill block wifi || true
     sudo systemctl disable --now wpa_supplicant
-    echo "install iwlwifi /bin/true" | sudo tee /etc/modprobe.d/disable-wifi.conf >/dev/null
-    echo "install iwlmvm /bin/true" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
-    echo "install rt2800pci /bin/true" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
-    echo "install ath9k /bin/true" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
+    echo "install iwlwifi /bin/false" | sudo tee /etc/modprobe.d/disable-wifi.conf >/dev/null
+    echo "install iwlmvm /bin/false" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
+    echo "install rt2800pci /bin/false" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
+    echo "install ath9k /bin/false" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
 }
 
 disable_bluetooth() {
     echo -e "\n=> Completely disabling Bluetooth capability..."
     sudo systemctl disable --now bluetooth
     sudo rfkill block bluetooth || true
-    echo "install btusb /bin/true" | sudo tee /etc/modprobe.d/disable-bluetooth.conf >/dev/null
-    echo "install bluetooth /bin/true" | sudo tee -a /etc/modprobe.d/disable-bluetooth.conf >/dev/null
+    echo "install btusb /bin/false" | sudo tee /etc/modprobe.d/disable-bluetooth.conf >/dev/null
+    echo "install bluetooth /bin/false" | sudo tee -a /etc/modprobe.d/disable-bluetooth.conf >/dev/null
 }
 
 disable_webcam() {
     echo -e "\n=> Completely disabling Webcam capability..."
-    echo "install uvcvideo /bin/true" | sudo tee /etc/modprobe.d/disable-webcam.conf >/dev/null
+    echo "install uvcvideo /bin/false" | sudo tee /etc/modprobe.d/disable-webcam.conf >/dev/null
 }
 
 disable_obscure_fs() {
     echo -e "\n=> Disabling obscure filesystems..."
-    local conf_file="/etc/modprobe.d/disable-fs.conf"
-    if [ ! -f "$conf_file" ]; then
-        local fs_list="cramfs freevxfs jffs2 hfs hfsplus squashfs udf"
-        for fs in $fs_list; do
-            echo "install $fs /bin/true" | sudo tee -a "$conf_file" >/dev/null
-        done
+    local conf_file_fs="/etc/modprobe.d/disable-fs.conf"
+    if [ ! -f "$conf_file_fs" ]; then
+        sudo tee "$conf_file_fs" >/dev/null <<EOF
+install cramfs /bin/false
+install freevxfs /bin/false
+install jffs2 /bin/false
+install hfs /bin/false
+install hfsplus /bin/false
+install udf /bin/false
+install cifs /bin/false
+install nfs /bin/false
+install nfsv3 /bin/false
+install nfsv4 /bin/false
+install ksmbd /bin/false
+install gfs2 /bin/false
+install reiserfs /bin/false
+install jfs /bin/false
+install xfs /bin/false
+# NOTE: xfs is blacklisted above but Fedora's default filesystem is ext4.
+# If your system uses XFS (check with: df -T /), comment out the xfs line.
+install 9p /bin/false
+install ceph /bin/false
+install afs /bin/false
+install ecryptfs /bin/false
+EOF
+    fi
+}
+
+# Taken from https://github.com/SpiritualMachines/os-hardening/blob/main/fedora/lib/modprobe-blacklist.conf
+# Thanks to SpiritualMachines
+disable_obsolete_networking() {
+    echo -e "\n=> Disabling obsolete networking..."
+    local conf_file_network="/etc/modprobe.d/disable-obsolete-networking.conf"
+    if [ ! -f "$conf_file_network" ]; then
+        sudo tee "$conf_file_network" >/dev/null <<EOF
+install dccp /bin/false
+install sctp /bin/false
+install rds /bin/false
+install tipc /bin/false
+install n-hdlc /bin/false
+install ax25 /bin/false
+install netrom /bin/false
+install x25 /bin/false
+install rose /bin/false
+install decnet /bin/false
+install econet /bin/false
+install af_802154 /bin/false
+install ipx /bin/false
+install appletalk /bin/false
+install psnap /bin/false
+install p8023 /bin/false
+install p8022 /bin/false
+install can /bin/false
+install atm /bin/false
+EOF
+    fi
+}
+
+# Taken from https://github.com/SpiritualMachines/os-hardening/blob/main/fedora/lib/modprobe-blacklist.conf
+# Thanks to SpiritualMachines
+disable_fireware_thunderbolt() {
+    echo -e "\n=> Disabling Fireware and Thunderbolt..."
+    local conf_file_thunder="/etc/modprobe.d/disable-fireware-thunderbolt.conf"
+    if [[ -f "$conf_file_thunder" ]]; then
+        sudo tee "$conf_file_thunder" >/dev/null <<EOF
+install firewire-core /bin/false
+install firewire-ohci /bin/false
+install firewire-sbp2 /bin/false
+install firewire-net /bin/false
+install ohci1394 /bin/false
+install sbp2 /bin/false
+install dv1394 /bin/false
+install raw1394 /bin/false
+install video1394 /bin/false
+# NOTE: thunderbolt is NOT blacklisted here because many modern laptops
+# require it for USB-C/DisplayPort/charging. Add the following line if
+# you have no Thunderbolt peripherals:
+# install thunderbolt /bin/false
+EOF
     fi
 }
 
@@ -267,19 +346,56 @@ strict_flatpak_overrides() {
     flatpak install -y flathub com.github.tchx84.Flatseal || echo "Warning: Flatseal failed to install."
 }
 
-hardcore_kernel_args() {
-    echo -e "\n=> Applying hardcore kernel hardening arguments..."
-    sudo grubby --update-kernel=ALL --args="\
-        module.sig_enforce=1 \
-        lockdown=confidentiality \
-        kptr_restrict=2 \
-        spec_store_bypass_disable=on \
-        pti=on \
-        l1tf=full,force \
-        mds=full,nosmt \
-        tsx=off \
-        spectre_v2=on \
-        ipv6.disable=1"
+hardened_kernel_args() {
+    echo -e "\n=> Applying hardened kernel arguments..."
+    local kargs=(
+            # Page Table Isolation — mitigates Meltdown (CVE-2017-5754)
+            "pti=on"
+
+            # Spectre v2 mitigation
+            "spectre_v2=on"
+
+            # Speculative Store Bypass Disable
+            "spec_store_bypass_disable=on"
+            "ssbd=force-on"
+
+            # IOMMU — protects against DMA attacks from PCIe devices
+            # Covers both Intel VT-d and AMD-Vi
+            "intel_iommu=on"
+            "amd_iommu=on"
+            "iommu=force"
+            "iommu.passthrough=0"
+            "iommu.strict=1"
+
+            # Initialize memory on allocation and free — mitigates use-after-free
+            # and uninitialized read vulnerabilities
+            "init_on_alloc=1"
+            "init_on_free=1"
+
+            # Randomize kernel stack offset on syscall entry
+            "randomize_kstack_offset=on"
+
+            # Shuffle free memory page allocator lists — hardens ASLR
+            "page_alloc.shuffle=1"
+
+            # Do not trust bootloader or CPU for initial entropy seeding
+            "random.trust_bootloader=off"
+            "random.trust_cpu=off"
+
+            # Restrict /proc/pid/mem access to ptrace-capable processes
+            "proc_mem.force_override=ptrace"
+
+            # Disable emergency shell in initramfs — prevents boot-time attack surface
+            "rd.shell=0"
+
+            # Suppress kernel log output to console — reduces information leakage
+            # during boot (kernel log still available via dmesg with root)
+            "loglevel=0"
+
+            # Disable systemd emergency SSH auto-spawn (systemd >= 255)
+            "systemd.ssh_auto=no"
+    )
+    sudo grubby --update-kernel=ALL --args="${kargs[*]}"
 }
 
 setup_usbguard() {
@@ -440,23 +556,26 @@ whiptail --title "FQS (Fedora Quick Start)" --msgbox "Welcome to the Fedora Quic
 
 # 1. Base Configuration Checklist
 BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
-"Select system tweaks to apply (Space to select, Enter to confirm):" 29 80 20 \
+"Select system tweaks to apply (Space to select, Enter to confirm):" 29 100 20 \
 "UPDATE" "Perform Full System Upgrade" ON \
 "REPOS" "Enable RPM Fusion & Flathub" ON \
 "DNF" "Optimize DNF Configuration" ON \
 "FAIL2BAN" "Install and enable Fail2Ban" ON \
 "MAC_RAND" "Enable MAC Address Randomization" ON \
 "HOSTNAME_SENDING" "Prevent sending hostname to DHCP" ON \
+"DIS_GEOCLUE" "Disable GeoClue (location services used on Gnome and KDE)" ON \
 "IPV6_PRIV" "Enable IPv6 Privacy Extensions" ON \
 "SYSCTL" "Apply Sysctl Kernel Hardening" ON \
 "FLATPAK_STRICT" "Strict Flatpak Overrides & Install Flatseal" OFF \
-"SECURE_DNS" "Enable System-wide DNS-over-TLS (DoT)" OFF \
-"DIS_FS" "Disable obscure filesystems (cramfs, hfs, udf, etc.)" OFF \
+"SECURE_DNS" "Enable System-wide DNS-over-TLS (DoT)" ON \
+"DIS_FS" "Disable obscure filesystems (cramfs, hfs, udf, etc.)" ON \
+"DIS_THUNDERBOLT" "Disable Fireware and Thunderbolt devices" OFF \
+"DIS_OBSOLETE_NETWORKING" "Disable obsolete networking protocols" ON \
 "DIS_PRINTERS" "Disable CUPS & Avahi (Printers/Discovery)" ON \
 "DIS_MODEM" "Disable Modem Manager (SIM card support)" ON \
 "FIREWALL" "Set Firewalld default zone to DROP" ON \
 "USBGUARD" "Set up USBGuard to block unauthorized devices" OFF \
-"KERNEL" "Apply Hardcore Kernel Hardening" OFF \
+"KERNEL" "Apply hardened kernel arguments" OFF \
 "BASH" "Install custom Bash prompt" ON \
 "AUTO_UPDATES" "Enable DNF-Automatic" OFF \
 "SECUREBOOT" "Enroll Secure Boot Keys (sbctl)" OFF \
@@ -560,18 +679,21 @@ clear
 [[ "$BASE_OPTS" == *"FAIL2BAN"* ]] && install_fail2ban
 [[ "$BASE_OPTS" == *"MAC_RAND"* ]] && mac_randomization
 [[ "$BASE_OPTS" == *"HOSTNAME_SENDING"* ]] && prevent_sending_dhcp_hostname
+[[ "$BASE_OPTS" == *"DIS_GEOCLUE"* ]] && disable_geoclue
 [[ "$BASE_OPTS" == *"IPV6_PRIV"* ]] && ipv6_privacy
 [[ "$BASE_OPTS" == *"SYSCTL"* ]] && sysctl_hardening
 [[ "$BASE_OPTS" == *"FLATPAK_STRICT"* ]] && strict_flatpak_overrides
 [[ "$BASE_OPTS" == *"SECURE_DNS"* ]] && enable_secure_dns "$DNS_IPS"
 [[ "$BASE_OPTS" == *"DIS_FS"* ]] && disable_obscure_fs
+[[ "$BASE_OPTS" == *"DIS_THUNDERBOLT"* ]] && disable_fireware_thunderbolt
+[[ "$BASE_OPTS" == *"DIS_OBSOLETE_NETWORKING"* ]] && disable_obsolete_networking
 [[ "$BASE_OPTS" == *"DIS_PRINTERS"* ]] && disable_cups_avahi
 [[ "$BASE_OPTS" == *"DIS_MODEM"* ]] && disable_modem_manager
 [[ "$BASE_OPTS" == *"DIS_WIFI"* ]] && disable_wifi
 [[ "$BASE_OPTS" == *"DIS_BT"* ]] && disable_bluetooth
 [[ "$BASE_OPTS" == *"DIS_WEBCAM"* ]] && disable_webcam
 [[ "$BASE_OPTS" == *"USBGUARD"* ]] && setup_usbguard
-[[ "$BASE_OPTS" == *"KERNEL"* ]] && hardcore_kernel_args
+[[ "$BASE_OPTS" == *"KERNEL"* ]] && hardened_kernel_args
 [[ "$BASE_OPTS" == *"NVIDIA"* ]] && install_nvidia
 [[ "$BASE_OPTS" == *"APPLE_KBD"* ]] && hid_apple_patch
 [[ "$BASE_OPTS" == *"DRACUT"* ]] && add_dracut_flags

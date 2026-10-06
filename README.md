@@ -21,8 +21,8 @@ The script uses a standard Whiptail terminal interface. You just check off the f
 * **Automation:** Optionally sets up `dnf-automatic` for silent security updates.
 
 ### Hardening & Privacy
-* **Kernel & Network:** Applies Secureblue-inspired sysctl hardening, randomizes MAC addresses, and sets Firewalld to DROP.
-* **Hardcore Kernel Hardening Args:** Applies "Hardcore" kernel hardening arguments via GRUB.
+* **Kernel & Network:** Applies Secureblue-inspired sysctl hardening, randomizes MAC addresses, disables hostname sending, disables GeoClue, and sets Firewalld to DROP.
+* **Kernel Hardening Args:** Applies kernel hardening arguments via grubby.
 * **Strict Flatpak Overrides:** Revokes overly broad filesystem and device permissions globally, and installs Flatseal so you can selectively re-enable access per app.
 * **Secure DNS (DoT):** Enables system-wide DNS-over-TLS via `systemd-resolved` with selectable providers (Cloudflare, Quad9, AdGuard, or Custom IPs).
 * **Filesystem Security:** Blacklists obscure, historically vulnerable filesystems (`cramfs`, `hfs`, `udf`, etc.) to prevent kernel exploits via malicious media.
