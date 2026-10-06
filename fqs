@@ -404,6 +404,7 @@ setup_usbguard() {
     usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
     sudo chmod 0600 /etc/usbguard/rules.conf
     sudo systemctl enable --now usbguard
+    systemctl --user enable --now usbguard-notifier
 }
 
 setup_firewall_drop() {
