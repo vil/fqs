@@ -206,8 +206,11 @@ disable_modem_manager() {
 
 disable_geoclue_service() {
     echo -e "\n=> Disabling geoclue service..."
-    sudo systemctl disable --now geoclue
-    sudo systemctl mask geoclue
+    # Check if users DE is either Gnome or KDE
+    if [[ "$XDG_CURRENT_DESKTOP" == "GNOME" || "$XDG_CURRENT_DESKTOP" == "KDE" ]]; then
+        sudo systemctl disable --now geoclue
+        sudo systemctl mask geoclue
+    fi
 }
 
 disable_wifi() {
@@ -415,7 +418,6 @@ setup_firewall_drop() {
 
 enroll_secureboot() {
     echo -e "\n=> Setting up Secure Boot..."
-    sudo dnf copr enable chenxiaolong/sbctl -y
     sudo dnf install sbctl -y
     sudo sbctl create-keys
     sudo sbctl enroll-keys -m --ignore-immutable
