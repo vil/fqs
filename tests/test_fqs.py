@@ -98,6 +98,33 @@ install() { blocked install "$@"; }
         self.assertEqual(result.stderr, "")
         self.assertEqual(list(self.sandbox.iterdir()), [self.bin_dir])
 
+    def test_entrypoint_supports_command_string_file_and_stdin(self):
+        prefix, separator, guard = SCRIPT.read_text().rpartition("\nif [[ ")
+        self.assertTrue(separator, "Script must have an entry-point guard")
+        self.assertIn('main "$@"', guard)
+        # Replace only main's body so entry-point tests cannot change the host.
+        program = (
+            prefix + '\nmain() { printf "entrypoint:%s\\n" "$*"; }\n'
+            + separator + guard
+        )
+        script = self.sandbox / "entrypoint.sh"
+        script.write_text(program)
+        assert BASH is not None
+        invocations = (
+            ([BASH, "--noprofile", "--norc", "-c", program, "fqs-test", "test-arg"], None),
+            ([BASH, "--noprofile", "--norc", str(script), "test-arg"], None),
+            ([BASH, "--noprofile", "--norc", "-s", "--", "test-arg"], program),
+        )
+        for command, stdin in invocations:
+            with self.subTest(invocation=command[3]):
+                result = subprocess.run(
+                    command, input=stdin, cwd=REPO_ROOT, env=self.env,
+                    text=True, capture_output=True, timeout=10, check=False,
+                )
+                self.assert_success(result)
+                self.assertEqual(result.stdout, "entrypoint:test-arg\n")
+                self.assertEqual(result.stderr, "")
+
     def test_choose_dnssec_arguments_explanations_and_stderr_selection(self):
         for dimensions in ((), (30, 100)):
             for selection in ("yes", "allow-downgrade"):

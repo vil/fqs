@@ -1353,6 +1353,7 @@ main() {
     printf 'No automatic reboot was performed. Review whether your updates, drivers or boot changes require one.\n'
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+# bash -c and stdin execution have no source filename, unlike sourced files.
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
     main "$@"
 fi
