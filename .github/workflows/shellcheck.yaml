@@ -15,4 +15,8 @@ jobs:
 
       - name: Check the script
         run: |
+          bash -n fqs
           shellcheck fqs
+
+      - name: Offline regression tests
+        run: python3 -m unittest discover -s tests -v

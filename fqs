@@ -7,20 +7,110 @@
 
 set -euo pipefail
 
-# Ensure whiptail is installed
-if ! command -v whiptail &> /dev/null; then
-    echo "Whiptail is required for the TUI. Installing..."
-    sudo dnf install newt -y > /dev/null
-fi
+# Keep sourcing side-effect free so helpers can be tested without changing a host.
+command_exists() { command -v "$1" &>/dev/null; }
+CONFIG_POLICY=keep
+CONFIG_CHANGED=false
+CONFIG_READY=false
+CURRENT_ACTION="startup"
+WORK_DIR=""
+SUDO_PID=""
+BACKUP_DIR=""
 
-# Authenticate sudo upfront
-sudo -v
-# Keep sudo alive during the script execution
-while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+cleanup() {
+    if [[ -n "$SUDO_PID" ]]; then
+        kill "$SUDO_PID" 2>/dev/null || true
+        wait "$SUDO_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$WORK_DIR" ]]; then rm -rf -- "$WORK_DIR"; fi
+}
+
+fail() { printf 'Error: %s\n' "$*" >&2; return 1; }
+
+on_error() {
+    local status="$1" line="$2"
+    trap - ERR
+    printf '\nFQS stopped during: %s (line %s, status %s).\n' "$CURRENT_ACTION" "$line" "$status" >&2
+    printf 'Earlier changes are NOT rolled back. Review the output before retrying.\n' >&2
+    if [[ -n "$BACKUP_DIR" ]]; then printf 'Configuration backups: %s\n' "$BACKUP_DIR" >&2; fi
+    exit "$status"
+}
+
+# Stage complete contents before touching a destination. Keep existing files by
+# default; replacement is an explicit wizard-wide choice with per-file backups.
+write_config() {
+    local target="$1" mode="${2:-0644}" staged
+    CONFIG_CHANGED=false
+    CONFIG_READY=false
+    staged=$(mktemp "$WORK_DIR/config.XXXXXX")
+    cat > "$staged"
+    if sudo test -L "$target"; then
+        fail "Refusing to replace symlink: $target"
+        return 1
+    fi
+    if sudo test -e "$target"; then
+        if ! sudo test -f "$target"; then fail "Not a regular file: $target"; return 1; fi
+        if sudo cmp -s "$staged" "$target"; then
+            printf 'Already configured: %s\n' "$target"
+            CONFIG_READY=true
+            return 0
+        fi
+        if [[ "$CONFIG_POLICY" == keep ]]; then
+            printf 'Keeping existing configuration (new settings not applied): %s\n' "$target"
+            return 0
+        fi
+        if [[ -z "$BACKUP_DIR" ]]; then
+            BACKUP_DIR="/var/backups/fqs/$(date +%Y%m%d-%H%M%S)-$$"
+            sudo install -d -m 0700 "$BACKUP_DIR"
+        fi
+        sudo cp --parents --preserve=all -- "$target" "$BACKUP_DIR/"
+    fi
+    if ! sudo test -d "$(dirname "$target")"; then
+        sudo install -d -m 0755 "$(dirname "$target")"
+    fi
+    # Rename in the same directory so interrupted writes cannot truncate config.
+    local adjacent
+    adjacent=$(sudo mktemp "${target}.fqs.XXXXXX")
+    sudo install -m "$mode" "$staged" "$adjacent"
+    sudo mv -fT -- "$adjacent" "$target"
+    if command_exists restorecon; then sudo restorecon "$target"; fi
+    CONFIG_CHANGED=true
+    CONFIG_READY=true
+}
+
+unit_exists() {
+    local state
+    state=$(systemctl show -p LoadState --value "$1") || return 1
+    [[ -n "$state" && "$state" != not-found ]]
+}
+
+disable_units() {
+    local unit
+    for unit in "$@"; do
+        if unit_exists "$unit"; then
+            sudo systemctl disable --now "$unit"
+            sudo systemctl mask "$unit"
+        else
+            printf 'Unit not installed; skipping: %s\n' "$unit"
+        fi
+    done
+}
+
+ensure_flatpak() {
+    if ! command_exists flatpak; then sudo dnf install -y flatpak; fi
+    sudo flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+}
+
+add_repo() {
+    local url="$1" target="$2" downloaded
+    if sudo test -e "$target"; then printf 'Repository already exists: %s\n' "$target"; return 0; fi
+    downloaded=$(mktemp "$WORK_DIR/repo.XXXXXX")
+    curl --fail --show-error --location --proto '=https' --proto-redir '=https' "$url" -o "$downloaded"
+    grep -q '^\[' "$downloaded" || { fail "Invalid repository file from $url"; return 1; }
+    write_config "$target" < "$downloaded"
+}
 
 # Core
-
-command_exists() { command -v "$1" &>/dev/null; }
 
 sys_update() {
     echo -e "\n=> Performing system upgrade..."
@@ -31,9 +121,16 @@ setup_repos() {
     echo -e "\n=> Adding RPM Fusion, Terra, and Flathub..."
     local fedora_ver
     fedora_ver="$(rpm -E %fedora)"
+    [[ "$fedora_ver" =~ ^[0-9]+$ ]] || { fail 'Cannot determine a numeric Fedora release.'; return 1; }
     sudo dnf install -y "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_ver}.noarch.rpm" \
                         "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm"
-    sudo dnf install --nogpgcheck --repofrompath "terra,https://repos.fyralabs.com/terra${fedora_ver}" terra-release -y
+    # Trust Terra's HTTPS-published key explicitly during bootstrap, without
+    # disabling package or repository metadata signature verification.
+    if ! rpm -q terra-release &>/dev/null; then
+        sudo dnf install --repofrompath "terra,https://repos.fyralabs.com/terra${fedora_ver}" \
+            --setopt="terra.gpgkey=https://repos.fyralabs.com/terra${fedora_ver}/key.asc" \
+            --setopt=terra.gpgcheck=1 --setopt=terra.repo_gpgcheck=1 terra-release -y
+    fi
     sudo dnf install -y dnf-plugins-core
     sudo dnf group upgrade core -y
     sudo dnf install -y terra-release-extras terra-release-mesa
@@ -41,35 +138,55 @@ setup_repos() {
     if ! command_exists flatpak; then
         sudo dnf install flatpak -y
     fi
-    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    ensure_flatpak
 }
 
 append_dnf_configs() {
     echo -e "\n=> Optimizing DNF..."
     local conf_file="/etc/dnf/dnf.conf"
-    if ! grep -q "max_parallel_downloads" "$conf_file"; then
-        sudo tee -a "$conf_file" >/dev/null <<'EOF'
-gpgcheck=1
-#localpkg_gpgcheck=1
-clean_requirements_on_remove=True
-skip_if_unavailable=True
-deltarpm=False
-best=True
-keepcache=True
-installonly_limit=3
-max_parallel_downloads=10
-defaultyes=True
-EOF
-    fi
+    local staged
+    staged=$(mktemp "$WORK_DIR/dnf.XXXXXX")
+    if sudo test -f "$conf_file"; then sudo cat "$conf_file" > "$staged"; fi
+    # Only fill missing keys in [main]; preserve administrator values and sections.
+    python3 - "$staged" <<'PY'
+import configparser
+import sys
+path = sys.argv[1]
+config = configparser.ConfigParser(interpolation=None, strict=False)
+with open(path) as stream:
+    text = stream.read()
+config.read_string(text)
+settings = {'gpgcheck': '1', 'max_parallel_downloads': '10',
+            'installonly_limit': '3', 'clean_requirements_on_remove': 'True'}
+missing = {key: value for key, value in settings.items()
+           if not config.has_option('main', key)}
+lines = text.splitlines(keepends=True)
+addition = ''.join(f'{key}={value}\n' for key, value in missing.items())
+for index, line in enumerate(lines):
+    if line.strip() == '[main]':
+        lines.insert(index + 1, '\n' + addition)
+        break
+else:
+    lines.append('\n[main]\n' + addition)
+with open(path, 'w') as stream:
+    stream.write(''.join(lines))
+PY
+    write_config "$conf_file" < "$staged"
 }
 
 setup_auto_updates() {
     echo -e "\n=> Setting up DNF Automatic Updates..."
-    sudo dnf install -y dnf-automatic
+    local package=dnf-automatic timer=dnf-automatic.timer
+    local version
+    version=$(dnf --version)
+    if [[ "$version" == *dnf5* ]]; then
+        package=dnf5-plugin-automatic
+        timer=dnf5-automatic.timer
+    fi
+    sudo dnf install -y "$package"
     local conf_file="/etc/dnf/automatic.conf"
-    if [ ! -f "$conf_file" ]; then
-        sudo touch "$conf_file"
-        sudo tee -a "$conf_file" >/dev/null <<'EOF'
+
+    write_config "$conf_file" <<'EOF'
 [commands]
 upgrade_type = security
 random_sleep = 0
@@ -79,8 +196,27 @@ apply_updates = yes
 [emitters]
 emit_via = stdio
 EOF
+    # An existing configuration may intentionally disable application of updates.
+    if ! sudo python3 - "$conf_file" <<'PY'
+import configparser
+import sys
+config = configparser.ConfigParser(interpolation=None)
+try:
+    with open(sys.argv[1]) as stream:
+        config.read_file(stream)
+    valid = (config.get('commands', 'upgrade_type', fallback='default') == 'security'
+             and config.getboolean('commands', 'apply_updates', fallback=False)
+             and config.get('commands', 'reboot', fallback='never') == 'never')
+except (OSError, ValueError, configparser.Error):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+    then
+        printf 'Automatic updates not enabled: config must specify security-only updates, apply_updates=yes and no automatic reboot.\n'
+        return 0
     fi
-    sudo systemctl enable --now dnf-automatic.timer
+    unit_exists "$timer" || { fail "Automatic update timer is unavailable: $timer"; return 1; }
+    sudo systemctl enable --now "$timer"
 }
 
 install_fail2ban() {
@@ -92,8 +228,8 @@ install_fail2ban() {
 mac_randomization() {
     echo -e "\n=> Enabling MAC Randomization..."
     local macrandomize_rule="/etc/NetworkManager/conf.d/00-macrandomize.conf"
-    if [ ! -f "$macrandomize_rule" ]; then
-        sudo tee -a "$macrandomize_rule" >/dev/null <<'EOF'
+    if [[ ! -e "$macrandomize_rule" || "$CONFIG_POLICY" == replace ]]; then
+        write_config "$macrandomize_rule" <<'EOF'
 [device]
 wifi.scan-rand-mac-address=yes
 
@@ -107,8 +243,8 @@ EOF
 prevent_sending_dhcp_hostname() {
     echo -e "\n=> Preventing sending DHCP hostname..."
     local dhcp_hostname_rule="/etc/NetworkManager/conf.d/10-dhcp-hostname.conf"
-    if [ ! -f "$dhcp_hostname_rule" ]; then
-        sudo tee -a "$dhcp_hostname_rule" >/dev/null <<'EOF'
+    if [[ ! -e "$dhcp_hostname_rule" || "$CONFIG_POLICY" == replace ]]; then
+        write_config "$dhcp_hostname_rule" <<'EOF'
 [connection]
 # Prevent sending machine hostname to DHCP server.
 # Hostname leakage allows network operators to identify and track devices.
@@ -121,8 +257,8 @@ EOF
 ipv6_privacy() {
     echo -e "\n=> Enabling IPv6 Privacy Extensions..."
     local ipv6_privacy_rule="/etc/NetworkManager/conf.d/00-ipv6-privacy.conf"
-    if [ ! -f "$ipv6_privacy_rule" ]; then
-        sudo tee -a "$ipv6_privacy_rule" >/dev/null <<'EOF'
+    if [[ ! -e "$ipv6_privacy_rule" || "$CONFIG_POLICY" == replace ]]; then
+        write_config "$ipv6_privacy_rule" <<'EOF'
 [connection]
 ipv6.ip6-privacy=2
 EOF
@@ -132,14 +268,14 @@ EOF
 sysctl_hardening() {
     echo -e "\n=> Applying sysctl hardening..."
     local sysctl_file="/etc/sysctl.d/55-hardening.conf"
-    sudo tee "$sysctl_file" >/dev/null <<'EOF'
+    write_config "$sysctl_file" <<'EOF'
 net.ipv4.tcp_syncookies = 1
 net.ipv4.tcp_rfc1337 = 1
 net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.icmp_ignore_bogus_error_responses = 1
 net.ipv4.tcp_timestamps = 0
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
+net.ipv4.conf.all.rp_filter = 2
+net.ipv4.conf.default.rp_filter = 2
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.all.secure_redirects = 0
@@ -148,16 +284,12 @@ net.ipv6.conf.all.accept_redirects = 0
 net.ipv6.conf.default.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.default.send_redirects = 0
-net.ipv4.conf.all.shared_media = 0
-net.ipv4.conf.all.arp_filter = 1
-net.ipv4.conf.all.arp_ignore = 2
-net.ipv4.conf.all.drop_gratuitous_arp = 1
+
 net.ipv4.conf.all.accept_source_route = 0
 net.ipv4.conf.default.accept_source_route = 0
 net.ipv6.conf.all.accept_source_route = 0
 net.ipv6.conf.default.accept_source_route = 0
-net.ipv4.tcp_sack = 0
-net.ipv4.tcp_dsack = 0
+
 net.ipv6.conf.all.use_tempaddr = 2
 net.ipv6.conf.default.use_tempaddr = 2
 net.ipv4.conf.all.log_martians = 1
@@ -170,8 +302,7 @@ kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
 kernel.oops_limit = 100
 kernel.warn_limit = 100
-kernel.panic = -1
-fs.binfmt_misc.status = 0
+
 fs.suid_dumpable = 0
 fs.protected_regular = 2
 fs.protected_fifos = 2
@@ -189,80 +320,84 @@ kernel.randomize_va_space = 2
 vm.mmap_min_addr = 65536
 vm.max_map_count = 1048576
 EOF
-    sudo sysctl --system
+    if [[ "$CONFIG_READY" == true ]]; then
+        # Kernel versions differ. Unsupported keys are reported, not silently ignored.
+        local key value
+        while IFS='=' read -r key value; do
+            key="${key//[[:space:]]/}"
+            [[ -n "$key" && "$key" != \#* ]] || continue
+            if [[ -e "/proc/sys/${key//./\/}" ]]; then
+                sudo sysctl -w "$key=${value# }"
+            else
+                printf 'Unsupported sysctl on this kernel; skipped: %s\n' "$key"
+            fi
+        done < <(sudo cat "$sysctl_file")
+    fi
 }
 
 disable_cups_avahi() {
     echo -e "\n=> Disabling CUPS and Avahi-daemon..."
-    sudo systemctl disable --now cups avahi-daemon
-    sudo systemctl mask cups avahi-daemon
+    disable_units cups.service cups.socket cups.path avahi-daemon.service avahi-daemon.socket
 }
 
 disable_modem_manager() {
     echo -e "\n=> Disabling modem manager..."
-    sudo systemctl disable --now ModemManager
-    sudo systemctl mask ModemManager
+    disable_units ModemManager.service
 }
 
 disable_geoclue_service() {
     echo -e "\n=> Disabling geoclue service..."
-    # Check if users DE is either Gnome or KDE
-    if [[ "$XDG_CURRENT_DESKTOP" == "GNOME" || "$XDG_CURRENT_DESKTOP" == "KDE" ]]; then
-        sudo systemctl disable --now geoclue
-        sudo systemctl mask geoclue
-    fi
+    disable_units geoclue.service
 }
 
 disable_wifi() {
     echo -e "\n=> Completely disabling Wi-Fi capability..."
-    sudo nmcli radio wifi off || true
-    sudo rfkill block wifi || true
-    sudo systemctl disable --now wpa_supplicant
-    echo "install iwlwifi /bin/false" | sudo tee /etc/modprobe.d/disable-wifi.conf >/dev/null
-    echo "install iwlmvm /bin/false" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
-    echo "install rt2800pci /bin/false" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
-    echo "install ath9k /bin/false" | sudo tee -a /etc/modprobe.d/disable-wifi.conf >/dev/null
+    write_config /etc/modprobe.d/disable-wifi.conf <<'EOF'
+install iwlwifi /bin/false
+install iwlmvm /bin/false
+install rt2800pci /bin/false
+install ath9k /bin/false
+EOF
+    sudo nmcli radio wifi off
+    if command_exists rfkill; then sudo rfkill block wifi; fi
+    disable_units wpa_supplicant.service
 }
 
 disable_bluetooth() {
     echo -e "\n=> Completely disabling Bluetooth capability..."
-    sudo systemctl disable --now bluetooth
-    sudo rfkill block bluetooth || true
-    echo "install btusb /bin/false" | sudo tee /etc/modprobe.d/disable-bluetooth.conf >/dev/null
-    echo "install bluetooth /bin/false" | sudo tee -a /etc/modprobe.d/disable-bluetooth.conf >/dev/null
+    write_config /etc/modprobe.d/disable-bluetooth.conf <<'EOF'
+install btusb /bin/false
+install bluetooth /bin/false
+EOF
+    disable_units bluetooth.service
+    if command_exists rfkill; then sudo rfkill block bluetooth; fi
 }
 
 disable_webcam() {
     echo -e "\n=> Completely disabling Webcam capability..."
-    echo "install uvcvideo /bin/false" | sudo tee /etc/modprobe.d/disable-webcam.conf >/dev/null
+    write_config /etc/modprobe.d/disable-webcam.conf <<'EOF'
+install uvcvideo /bin/false
+EOF
 }
 
 disable_obscure_fs() {
     echo -e "\n=> Disabling obscure filesystems..."
-    local conf_file_fs="/etc/modprobe.d/disable-fs.conf"
-    if [ ! -f "$conf_file_fs" ]; then
-        sudo tee "$conf_file_fs" >/dev/null <<EOF
+    local conf_file_fs="/etc/modprobe.d/disable-fs.conf" fs
+    for fs in cramfs freevxfs jffs2 hfs hfsplus; do
+        if findmnt -rn -t "$fs" | grep -q . ||
+           awk -v fs="$fs" '$1 !~ /^#/ && $3 == fs {found=1} END {exit !found}' /etc/fstab; then
+            fail "Filesystem $fs is mounted or listed in fstab; refusing this blacklist."
+            return 1
+        fi
+    done
+    if [[ ! -e "$conf_file_fs" || "$CONFIG_POLICY" == replace ]]; then
+        write_config "$conf_file_fs" <<'EOF'
 install cramfs /bin/false
 install freevxfs /bin/false
 install jffs2 /bin/false
 install hfs /bin/false
 install hfsplus /bin/false
-install udf /bin/false
-install cifs /bin/false
-install nfs /bin/false
-install nfsv3 /bin/false
-install nfsv4 /bin/false
-install ksmbd /bin/false
-install gfs2 /bin/false
-install reiserfs /bin/false
-install jfs /bin/false
-install xfs /bin/false
-# NOTE: xfs is blacklisted above but Fedora's default filesystem is ext4.
-# If your system uses XFS (check with: df -T /), comment out the xfs line.
-install 9p /bin/false
-install ceph /bin/false
-install afs /bin/false
-install ecryptfs /bin/false
+# Common local, optical, virtual and network filesystems are deliberately kept.
 EOF
     fi
 }
@@ -272,8 +407,8 @@ EOF
 disable_obsolete_networking() {
     echo -e "\n=> Disabling obsolete networking..."
     local conf_file_network="/etc/modprobe.d/disable-obsolete-networking.conf"
-    if [ ! -f "$conf_file_network" ]; then
-        sudo tee "$conf_file_network" >/dev/null <<EOF
+    if [[ ! -e "$conf_file_network" || "$CONFIG_POLICY" == replace ]]; then
+        write_config "$conf_file_network" <<'EOF'
 install dccp /bin/false
 install sctp /bin/false
 install rds /bin/false
@@ -302,8 +437,8 @@ EOF
 disable_fireware_thunderbolt() {
     echo -e "\n=> Disabling Fireware and Thunderbolt..."
     local conf_file_thunder="/etc/modprobe.d/disable-fireware-thunderbolt.conf"
-    if [[ -f "$conf_file_thunder" ]]; then
-        sudo tee "$conf_file_thunder" >/dev/null <<EOF
+    if [[ ! -e "$conf_file_thunder" || "$CONFIG_POLICY" == replace ]]; then
+        write_config "$conf_file_thunder" <<'EOF'
 install firewire-core /bin/false
 install firewire-ohci /bin/false
 install firewire-sbp2 /bin/false
@@ -321,32 +456,63 @@ EOF
     fi
 }
 
+choose_dnssec() {
+    whiptail --title 'DNSSEC validation: security vs compatibility' --scrolltext --msgbox \
+        'DNSSEC validates signed DNS data; DNS-over-TLS encrypts the connection to your resolver. They provide different protections.\n\nyes (default): enforce validation. Invalid signatures are rejected, and DNS lookups can fail if the resolver/network cannot support DNSSEC. Unsigned domains can still resolve; this does not require every domain to be signed.\n\nallow-downgrade: validate when support is detected, but allow validation to be disabled if the resolver appears not to support it. More compatible, but an attacker may be able to trigger this downgrade and remove DNSSEC protection.\n\nDNS-over-TLS remains strict (yes) with either choice. Choose the tradeoff explicitly; Cancel returns without applying changes.' \
+        "${1:-24}" "${2:-80}" || return $?
+    whiptail --title 'DNSSEC validation: security vs compatibility' --default-item yes --menu \
+        'Choose DNSSEC validation mode. DNS-over-TLS remains strict in both modes.' \
+        "${1:-24}" "${2:-80}" 2 \
+        yes 'Strict validation; fail if DNSSEC support is unavailable' \
+        allow-downgrade 'Compatibility fallback; susceptible to downgrade attacks' \
+        3>&1 1>&2 2>&3
+}
+
 enable_secure_dns() {
-    local dns_ips="$1"
-    echo -e "\n=> Enabling System-wide DNS-over-TLS (DoT) with IPs: $dns_ips"
-    sudo mkdir -p /etc/systemd/resolved.conf.d
-    sudo tee /etc/systemd/resolved.conf.d/dns_over_tls.conf >/dev/null <<EOF
+    local dns_ips="$1" dnssec_mode="${2:-yes}"
+    case "$dnssec_mode" in
+        yes|allow-downgrade) ;;
+        *) fail "Unsupported DNSSEC mode: $dnssec_mode"; return 1 ;;
+    esac
+    echo -e "\n=> Enabling DNS-over-TLS with DNSSEC=$dnssec_mode and servers: $dns_ips"
+    validate_dns "$dns_ips"
+    unit_exists systemd-resolved.service || { fail 'systemd-resolved is not installed.'; return 1; }
+    write_config /etc/systemd/resolved.conf.d/dns_over_tls.conf <<EOF
 [Resolve]
 DNS=$dns_ips
+FallbackDNS=
+Domains=~.
 DNSOverTLS=yes
-DNSSEC=yes
+DNSSEC=$dnssec_mode
 DNSStubListener=yes
 EOF
 }
 
 restart_networking_stack() {
     echo -e "\n=> Restarting networking stack..."
-    sudo systemctl restart systemd-resolved
-    sudo systemctl restart NetworkManager
+    # Do not disconnect interfaces or force NetworkManager restarts.
+    sudo systemctl enable --now systemd-resolved.service
+    sudo systemctl restart systemd-resolved.service
+    printf 'DNS configuration written. Verify with resolvectl status/query; VPN or per-link DNS may still take precedence.\n'
 }
 
 strict_flatpak_overrides() {
     echo -e "\n=> Applying Strict Flatpak Overrides & Installing Flatseal..."
-    sudo flatpak override --nofilesystem=host
-    sudo flatpak override --nofilesystem=home
-    sudo flatpak override --nodevice=all
-    sudo dnf install flatpak -y >/dev/null
-    flatpak install -y flathub com.github.tchx84.Flatseal || echo "Warning: Flatseal failed to install."
+    ensure_flatpak
+    # Preserve the existing global override file before the Flatpak CLI edits it.
+    if sudo test -e /var/lib/flatpak/overrides/global; then
+        if [[ "$CONFIG_POLICY" == keep ]]; then
+            printf 'Keeping existing global Flatpak overrides; restrictions skipped.\n'
+            return 0
+        fi
+        if [[ -z "$BACKUP_DIR" ]]; then
+            BACKUP_DIR="/var/backups/fqs/$(date +%Y%m%d-%H%M%S)-$$"
+            sudo install -d -m 0700 "$BACKUP_DIR"
+        fi
+        sudo cp --parents --preserve=all /var/lib/flatpak/overrides/global "$BACKUP_DIR/"
+    fi
+    sudo flatpak install --system -y flathub com.github.tchx84.Flatseal
+    sudo flatpak override --system --nofilesystem=host --nofilesystem=home --nodevice=all
 }
 
 hardened_kernel_args() {
@@ -388,48 +554,67 @@ hardened_kernel_args() {
             # Restrict /proc/pid/mem access to ptrace-capable processes
             "proc_mem.force_override=ptrace"
 
-            # Disable emergency shell in initramfs — prevents boot-time attack surface
-            "rd.shell=0"
-
-            # Suppress kernel log output to console — reduces information leakage
-            # during boot (kernel log still available via dmesg with root)
-            "loglevel=0"
 
             # Disable systemd emergency SSH auto-spawn (systemd >= 255)
             "systemd.ssh_auto=no"
     )
-    sudo grubby --update-kernel=ALL --args="${kargs[*]}"
+    command_exists grubby || { fail 'grubby is required for kernel arguments.'; return 1; }
+    local kernel
+    kernel=$(sudo grubby --default-kernel)
+    [[ -f "$kernel" ]] || { fail 'Cannot identify the default kernel.'; return 1; }
+    [[ $(find /boot -maxdepth 1 -name 'vmlinuz-*' -type f | wc -l) -ge 2 ]] || {
+        fail 'Keep at least two installed kernels before changing boot arguments.'; return 1;
+    }
+    if [[ -z "$BACKUP_DIR" ]]; then
+        BACKUP_DIR="/var/backups/fqs/$(date +%Y%m%d-%H%M%S)-$$"
+        sudo install -d -m 0700 "$BACKUP_DIR"
+    fi
+    sudo cp --parents --preserve=all -r /boot/loader/entries "$BACKUP_DIR/"
+    sudo grubby --update-kernel="$kernel" --args="${kargs[*]}"
+    printf 'Changed the default kernel only. Keep an older kernel as a recovery option.\n'
 }
 
 setup_usbguard() {
     echo -e "\n=> Setting up USBGuard..."
     sudo dnf install -y usbguard usbguard-notifier
-    usbguard generate-policy | sudo tee /etc/usbguard/rules.conf >/dev/null
-    sudo chmod 0600 /etc/usbguard/rules.conf
-    sudo systemctl enable --now usbguard
-    systemctl --user enable --now usbguard-notifier
+    local policy
+    policy=$(mktemp "$WORK_DIR/usbguard.XXXXXX")
+    sudo usbguard generate-policy > "$policy"
+    [[ -s "$policy" ]] || { fail 'USBGuard generated an empty policy; refusing to enable enforcement.'; return 1; }
+    write_config /etc/usbguard/rules.conf 0600 < "$policy"
+    if [[ "$CONFIG_READY" != true ]]; then
+        printf 'Existing USBGuard policy kept; service activation skipped for safety.\n'
+        return 0
+    fi
+    sudo systemctl enable usbguard.service
+    if [[ "$CONFIG_CHANGED" == true ]]; then
+        sudo systemctl restart usbguard.service
+    else
+        sudo systemctl start usbguard.service
+    fi
+    printf 'USBGuard enabled for currently attached devices. Use sudo usbguard list-devices to inspect blocks.\n'
 }
 
 setup_firewall_drop() {
     echo -e "\n=> Configuring Firewalld (Setting default zone to DROP)..."
+    sudo dnf install -y firewalld
+    sudo systemctl enable --now firewalld.service
+    # Only change the default; never persist unrelated runtime rules.
     sudo firewall-cmd --set-default-zone=drop
-    sudo firewall-cmd --runtime-to-permanent
+    printf 'Explicit per-connection zones are unchanged. Verify with firewall-cmd --get-active-zones.\n'
 }
 
 enroll_secureboot() {
-    echo -e "\n=> Setting up Secure Boot..."
-    sudo dnf install sbctl -y
-    sudo sbctl create-keys
-    sudo sbctl enroll-keys -m --ignore-immutable
+    fail 'Automatic Secure Boot enrollment is intentionally disabled: firmware recovery and a verified signed boot chain must be prepared manually.'
 }
 
 install_vpn_app() {
     echo -e "\n=> Installing VPN ($1)..."
     if [ "$1" == "IVPN" ]; then
-        sudo dnf config-manager addrepo --from-repofile=https://repo.ivpn.net/stable/fedora/generic/ivpn.repo
+        add_repo https://repo.ivpn.net/stable/fedora/generic/ivpn.repo /etc/yum.repos.d/ivpn.repo
         sudo dnf install -y iptables-legacy ivpn-ui
     elif [ "$1" == "Mullvad" ]; then
-        sudo dnf config-manager addrepo --from-repofile=https://repository.mullvad.net/rpm/stable/mullvad.repo
+        add_repo https://repository.mullvad.net/rpm/stable/mullvad.repo /etc/yum.repos.d/mullvad.repo
         sudo dnf install -y mullvad-vpn
     fi
 }
@@ -440,19 +625,104 @@ install_code_editor() {
         "Zed") sudo dnf install zed -y ;;
         "VSCodium")
             sudo rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
-            printf "[gitlab.com_paulcarroty_vscodium_repo]\nname=VSCodium Repository\nbaseurl=https://download.vscodium.com/rpms/\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg\nmetadata_expire=1h\n" | sudo tee /etc/yum.repos.d/vscodium.repo
+            write_config /etc/yum.repos.d/vscodium.repo <<'EOF'
+[gitlab.com_paulcarroty_vscodium_repo]
+name=VSCodium Repository
+baseurl=https://download.vscodium.com/rpms/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
+metadata_expire=1h
+EOF
             sudo dnf install codium -y ;;
         "NeoVim")
-            sudo dnf install neovim -y
-            git clone https://github.com/NvChad/starter ~/.config/nvim ;;
+            sudo dnf install neovim git -y
+            if [[ -e "${XDG_CONFIG_HOME:-$HOME/.config}/nvim" || -L "${XDG_CONFIG_HOME:-$HOME/.config}/nvim" ]]; then
+                printf 'Keeping existing Neovim configuration; NvChad clone skipped.\n'
+            else
+                mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}"
+                git clone https://github.com/NvChad/starter "${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
+            fi ;;
     esac
 }
 
 setup_protonge() {
     echo -e "\n=> Installing Steam and Proton-GE..."
     sudo dnf install steam -y
-    mkdir -p ~/.steam/root/compatibilitytools.d
-    curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep "browser_download_url.*tar.gz" | cut -d\" -f4 | xargs curl -L | tar -xz -C ~/.steam/root/compatibilitytools.d
+    python3 - "$WORK_DIR" "$HOME/.steam/root/compatibilitytools.d" <<'PY'
+import hashlib
+import json
+import pathlib
+import platform
+import re
+import shutil
+import sys
+import tarfile
+import urllib.request
+work, destination = map(pathlib.Path, sys.argv[1:])
+def download(url):
+    if not url.startswith('https://'):
+        raise ValueError('Refusing a non-HTTPS download')
+    return urllib.request.urlopen(url, timeout=60)
+with download('https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest') as response:
+    release = json.load(response)
+assets = {item['name']: item['browser_download_url'] for item in release['assets']}
+tag = release['tag_name']
+if not re.fullmatch(r'GE-Proton[\w.-]+', tag):
+    raise ValueError('Unexpected Proton-GE release tag')
+architecture = platform.machine()
+if architecture not in ('x86_64', 'aarch64'):
+    raise ValueError(f'Unsupported Proton-GE architecture: {architecture}')
+name = f'{tag}-{architecture}.tar.gz'
+if name not in assets and architecture == 'x86_64':
+    name = f'{tag}.tar.gz'  # Older x86_64 releases used unsuffixed assets.
+if name not in assets:
+    raise ValueError(f'Release has no archive for {architecture}')
+root = tag
+target = destination / root
+if target.exists() or target.is_symlink():
+    print(f'Keeping existing Proton-GE installation: {target}')
+    sys.exit(0)
+checksum = name.removesuffix('.tar.gz') + '.sha512sum'
+if checksum not in assets:
+    raise ValueError('Release has no SHA-512 checksum; refusing unverified extraction')
+with download(assets[checksum]) as response:
+    expected = response.read(16384).decode().split()[0]
+if not re.fullmatch(r'[a-fA-F0-9]{128}', expected):
+    raise ValueError('Invalid release checksum')
+archive = work / name
+hasher = hashlib.sha512()
+with download(assets[name]) as response, archive.open('wb') as output:
+    while chunk := response.read(1024 * 1024):
+        hasher.update(chunk)
+        output.write(chunk)
+if hasher.hexdigest().lower() != expected.lower():
+    raise ValueError('Proton-GE checksum mismatch')
+staging = work / 'proton'
+staging.mkdir()
+with tarfile.open(archive) as package:
+    members = package.getmembers()
+    roots = set()
+    for member in members:
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or '..' in path.parts or not path.parts:
+            raise ValueError('Unexpected archive path')
+        roots.add(path.parts[0])
+    if len(roots) != 1 or not roots.issubset({tag, f'{tag}-{architecture}'}):
+        raise ValueError('Unexpected archive root directory')
+    root = roots.pop()
+    target = destination / root
+    if target.exists() or target.is_symlink():
+        print(f'Keeping existing Proton-GE installation: {target}')
+        sys.exit(0)
+    package.extractall(staging, filter='data')
+if not (staging / root).is_dir():
+    raise ValueError('Proton-GE archive does not contain an installation directory')
+destination.mkdir(parents=True, exist_ok=True)
+shutil.move(str(staging / root), str(target))
+print(f'Installed {root}. Restart Steam to select it for individual games.')
+PY
 }
 
 install_browser() {
@@ -462,30 +732,31 @@ install_browser() {
             sudo dnf copr enable imput/helium -y
             sudo dnf install helium-bin -y ;;
         "Trivalent")
-            sudo dnf config-manager addrepo --from-repofile=https://repo.secureblue.dev/secureblue.repo
+            add_repo https://repo.secureblue.dev/secureblue.repo /etc/yum.repos.d/secureblue.repo
             sudo dnf install trivalent -y ;;
         "Brave")
-            curl -fsS https://dl.brave.com/install.sh | sh
-            # Brave debloat policies
-            sudo mkdir -p /etc/brave/policies/managed/
-            sudo tee /etc/brave/policies/managed/debloat.json >/dev/null <<'EOF'
+            add_repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo /etc/yum.repos.d/brave-browser.repo
+            sudo dnf install -y brave-browser
+            write_config /etc/brave/policies/managed/debloat.json <<'EOF'
 { "BraveRewardsDisabled": true, "BraveWalletDisabled": true, "BraveVPNDisabled": true, "BraveAIChatEnabled": false, "BraveNewsDisabled": true, "BraveTalkDisabled": true, "SyncDisabled": true, "TorDisabled": true, "DnsOverHttpsMode": "automatic" }
 EOF
             ;;
         "Chromium") sudo dnf install chromium -y ;;
         "Librewolf")
-            curl -fsSL https://rpm.librewolf.net/librewolf-repo.repo | sudo tee /etc/yum.repos.d/librewolf.repo >/dev/null
+            add_repo https://rpm.librewolf.net/librewolf-repo.repo /etc/yum.repos.d/librewolf.repo
             sudo dnf install librewolf -y ;;
     esac
 }
 
 install_virtmanager() {
     echo -e "\n=> Installing virt-manager..."
-    sudo dnf install virt-manager -y
-    # Add user to libvirt group
-    sudo usermod -aG libvirt "$USER"
-    # Restart libvirt service
-    sudo systemctl restart libvirtd
+    sudo dnf install virt-manager libvirt qemu-kvm -y
+    if getent group libvirt >/dev/null; then sudo usermod -aG libvirt "$(id -un)"; fi
+    if unit_exists virtqemud.socket; then
+        sudo systemctl enable --now virtqemud.socket virtnetworkd.socket
+    else
+        sudo systemctl enable --now libvirtd.service
+    fi
 }
 
 add_dev_tools() {
@@ -495,27 +766,39 @@ add_dev_tools() {
 
 install_nvidia() {
     echo -e "\n=> Installing Nvidia Drivers..."
+    local sb_state
+    if [[ -d /sys/firmware/efi ]]; then
+        if ! command_exists mokutil || ! sb_state=$(mokutil --sb-state) ||
+           ! grep -qi 'SecureBoot disabled' <<< "$sb_state"; then
+            fail 'Secure Boot is enabled or cannot be checked. Configure akmods signing and MOK manually first.'
+            return 1
+        fi
+    fi
+    if ! lspci -nn | grep -Ei '(VGA|3D|Display)' | grep -qi nvidia; then
+        fail 'No NVIDIA display controller detected.'; return 1
+    fi
     sudo dnf install akmod-nvidia -y
 }
 
 hid_apple_patch() {
     echo -e "\n=> Patching Apple Keyboard (hid_apple)..."
     local conf_file="/etc/modprobe.d/hid_apple.conf"
-    if ! grep -q "hid_apple fnmode" "$conf_file" 2>/dev/null; then
-        echo "options hid_apple fnmode=0" | sudo tee -a "$conf_file" >/dev/null
-    fi
-    sudo modprobe -r hid_apple || true
-    sudo modprobe hid_apple
+    write_config "$conf_file" <<'EOF'
+options hid_apple fnmode=0
+EOF
+    printf 'Keyboard option will apply at reboot; the active keyboard is not unloaded.\n'
 }
 
 add_dracut_flags() {
     echo -e "\n=> Adding Dracut Flags (Bluetooth Decryption)..."
     local conf_file="/etc/dracut.conf.d/flags.conf"
-    if ! grep -q "hostonly" "$conf_file" 2>/dev/null; then
-        echo 'hostonly="yes"' | sudo tee -a "$conf_file" >/dev/null
-        echo 'add_dracutmodules+=" bluetooth "' | sudo tee -a "$conf_file" >/dev/null
-    fi
-    sudo dracut --regenerate-all --force --verbose
+    dracut --list-modules | grep -qx '[[:space:]]*bluetooth' || {
+        fail 'This dracut installation has no bluetooth module.'; return 1;
+    }
+    write_config "$conf_file" <<'EOF'
+add_dracutmodules+=" bluetooth "
+EOF
+    printf 'Configuration saved for future initramfs builds; no existing recovery images were overwritten.\n'
 }
 
 install_tor() {
@@ -526,15 +809,28 @@ install_tor() {
 
 install_selection() {
     echo -e "\n=> Installing extra packages: $1"
-    for pkg in $1; do
-        if rpm -q "$pkg" &>/dev/null; then continue; fi
-        sudo dnf install -y "$pkg" || flatpak install -y flathub "$pkg" || echo "Failed to install $pkg"
+    local pkg
+    local -a packages
+    read -r -a packages <<< "$1"
+    for pkg in "${packages[@]}"; do
+        if [[ "$pkg" == flatpak:* ]]; then
+            ensure_flatpak
+            sudo flatpak install --system -y flathub "${pkg#flatpak:}"
+        else
+            if rpm -q -- "$pkg" &>/dev/null; then continue; fi
+            sudo dnf install -y -- "$pkg"
+        fi
     done
 }
 
 setup_bash_prompt() {
     echo -e "\n=> Setting up Bash Prompt..."
+    if [[ -L "$HOME/.bashrc" ]]; then printf 'Keeping symlinked .bashrc; prompt skipped.\n'; return 0; fi
     if ! grep -q "PS1_CMD1" "$HOME/.bashrc" 2>/dev/null; then
+        if [[ -e "$HOME/.bashrc" ]]; then
+            if [[ "$CONFIG_POLICY" == keep ]]; then printf 'Keeping existing .bashrc; prompt skipped.\n'; return 0; fi
+            cp -p -- "$HOME/.bashrc" "$HOME/.bashrc.fqs-$(date +%Y%m%d-%H%M%S)-$$.bak"
+        fi
         tee -a "$HOME/.bashrc" >/dev/null <<'EOF'
 # Vili's Bash prompt
 PROMPT_COMMAND='PS1_CMD1=$(git branch --show-current 2>/dev/null)'
@@ -546,186 +842,517 @@ EOF
 setup_config() {
     echo -e "\n=> Setting up SSH and Git..."
     if ! command_exists git; then sudo dnf install git -y; fi
-    if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-        ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -N ""
+    if ! command_exists ssh-keygen; then sudo dnf install -y openssh-clients; fi
+    if [[ -L "$HOME/.ssh" || -L "$HOME/.ssh/id_ed25519" || -L "$HOME/.ssh/id_ed25519.pub" ]]; then
+        fail 'Refusing to generate SSH keys through a symlink.'; return 1
     fi
-    git config --global user.name "$1"
-    git config --global user.email "$2"
+    mkdir -p "$HOME/.ssh"
+    chmod 0700 "$HOME/.ssh"
+    if [[ ! -e "$HOME/.ssh/id_ed25519" && ! -e "$HOME/.ssh/id_ed25519.pub" ]]; then
+        # Interactive passphrase entry is deliberate; never silently create an unencrypted key.
+        ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519"
+    else
+        printf 'Keeping existing SSH key files.\n'
+    fi
+    local key value
+    for key in user.name user.email; do
+        if [[ "$key" == user.name ]]; then value="$1"; else value="$2"; fi
+        if git config --global --get "$key" >/dev/null; then
+            printf 'Keeping existing Git %s.\n' "$key"
+        else
+            git config --global "$key" "$value"
+        fi
+    done
 }
 
-# TUI
+# TUI and execution plan
 
-whiptail --title "FQS (Fedora Quick Start)" --msgbox "Welcome to the Fedora Quick Start script by Vili.\n\nThis wizard will guide you through post-installation setup. You will select all your preferences first, and then the script will run uninterrupted." 12 70
+declare -a OPTION_IDS=()
+declare -A LABEL DETAIL GROUP SELECTED ACTION
 
-# 1. Base Configuration Checklist
-BASE_OPTS=$(whiptail --title "System Base Configuration" --checklist \
-"Select system tweaks to apply (Space to select, Enter to confirm):" 29 100 20 \
-"UPDATE" "Perform Full System Upgrade" ON \
-"REPOS" "Enable RPM Fusion & Flathub" ON \
-"DNF" "Optimize DNF Configuration" ON \
-"FAIL2BAN" "Install and enable Fail2Ban" ON \
-"MAC_RAND" "Enable MAC Address Randomization" ON \
-"HOSTNAME_SENDING" "Prevent sending hostname to DHCP" ON \
-"DIS_GEOCLUE" "Disable GeoClue (location services used on Gnome and KDE)" ON \
-"IPV6_PRIV" "Enable IPv6 Privacy Extensions" ON \
-"SYSCTL" "Apply Sysctl Kernel Hardening" ON \
-"FLATPAK_STRICT" "Strict Flatpak Overrides & Install Flatseal" OFF \
-"SECURE_DNS" "Enable System-wide DNS-over-TLS (DoT)" ON \
-"DIS_FS" "Disable obscure filesystems (cramfs, hfs, udf, etc.)" ON \
-"DIS_THUNDERBOLT" "Disable Fireware and Thunderbolt devices" OFF \
-"DIS_OBSOLETE_NETWORKING" "Disable obsolete networking protocols" ON \
-"DIS_PRINTERS" "Disable CUPS & Avahi (Printers/Discovery)" ON \
-"DIS_MODEM" "Disable Modem Manager (SIM card support)" ON \
-"FIREWALL" "Set Firewalld default zone to DROP" ON \
-"USBGUARD" "Set up USBGuard to block unauthorized devices" OFF \
-"KERNEL" "Apply hardened kernel arguments" OFF \
-"BASH" "Install custom Bash prompt" ON \
-"AUTO_UPDATES" "Enable DNF-Automatic" OFF \
-"SECUREBOOT" "Enroll Secure Boot Keys (sbctl)" OFF \
-"TOR" "Install and enable Tor service" OFF \
-"NVIDIA" "Install Nvidia Drivers (akmod-nvidia)" OFF \
-"APPLE_KBD" "Patch Apple Keyboard FN key (hid_apple)" OFF \
-"DRACUT" "Allow BT keyboard during LUKS decryption" OFF \
-"DIS_WIFI" "Completely Disable Wi-Fi (Modprobe & NM)" OFF \
-"DIS_BT" "Completely Disable Bluetooth (Modprobe & RFKill)" OFF \
-"DIS_WEBCAM" "Completely Disable Webcam (uvcvideo)" OFF \
-3>&1 1>&2 2>&3) || exit 0
-BASE_OPTS=$(echo "$BASE_OPTS" | tr -d '"')
+register_option() {
+    local id="$1"
+    OPTION_IDS+=("$id")
+    LABEL["$id"]="$2" GROUP["$id"]="$3" SELECTED["$id"]="$4"
+    ACTION["$id"]="$5" DETAIL["$id"]="$6"
+}
 
-# 1.5 Secure DNS Provider (If selected)
-DNS_IPS=""
-if [[ "$BASE_OPTS" == *"SECURE_DNS"* ]]; then
-    DNS_CHOICE=$(whiptail --title "Secure DNS Provider" --radiolist \
-    "Choose a DNS-over-TLS provider:" 15 70 4 \
-    "Cloudflare" "1.1.1.1 (Fast, Privacy-focused)" OFF \
-    "Quad9" "9.9.9.9 (Malware blocking)" ON \
-    "AdGuard" "94.140.14.14 (Ad & Tracker blocking)" OFF \
-    "Custom" "Enter your own IPs (Space separated)" OFF \
-    3>&1 1>&2 2>&3) || exit 0
+init_options() {
+    register_option DNF 'DNF download settings' System off append_dnf_configs 'Adds missing signature-checking, parallel-download and cleanup settings in [main]. Existing values are preserved. Editing an existing dnf.conf requires the backup-and-replace policy. Does not enable automatic yes or skip unavailable repositories.'
+    register_option UPDATE 'Upgrade installed packages' System on sys_update 'Runs dnf upgrade --refresh -y. Downloads and installs available updates from enabled repositories. This can be large, and package changes are not automatically reversible. Reboot afterward if the kernel or core components changed.'
+    register_option REPOS 'RPM Fusion, Terra and Flathub' System off setup_repos 'Adds third-party RPM Fusion Free/Nonfree, Terra (including extras/Mesa), and system-wide Flathub. Also upgrades the core package group. These repositories may replace distribution packages and distribute proprietary software. Package signature verification is not bypassed. Required for Steam/NVIDIA or Zed unless their repositories already exist.'
+    register_option AUTO_UPDATES 'Unattended security updates' System off setup_auto_updates 'Installs the DNF automatic updater and enables its timer only when the configuration specifies security-only updates with automatic application. An existing config is kept unless you select backup-and-replace. Updates may require a manual reboot; no automatic reboot is configured.'
+    register_option FAIL2BAN 'Install Fail2Ban service' Security off install_fail2ban 'Installs and starts Fail2Ban. It can ban sources that repeatedly fail authentication, but protection depends on enabled jails and matching logs. Merely enabling the daemon does not guarantee SSH protection; review jail configuration yourself.'
+    register_option MAC_RAND 'Randomize network MAC addresses' Network off mac_randomization 'Sets NetworkManager defaults for random Wi-Fi scan and connection MAC addresses, including Ethernet. Existing connection profiles may override these defaults. Can break DHCP reservations, MAC allowlists and captive portals. Applied on future connections; FQS does not restart NetworkManager.'
+    register_option HOSTNAME_SENDING 'Do not send DHCP hostname' Network off prevent_sending_dhcp_hostname 'Sets NetworkManager defaults to omit the machine hostname in IPv4/IPv6 DHCP. Existing connection profiles may override this. Local name registration may stop working. Takes effect on future connections.'
+    register_option IPV6_PRIV 'Temporary IPv6 addresses' Network off ipv6_privacy 'Prefers temporary IPv6 addresses through NetworkManager defaults. Reduces address-based tracking, but does not hide your network prefix or identity. Existing connection settings can override it. Applies on reconnection.'
+    register_option SECURE_DNS 'Strict DNS-over-TLS' Network off configure_dns_action 'Writes a systemd-resolved drop-in using an authenticated TLS provider, disables fallback resolvers and routes DNS through it. Blocks DNS if encrypted transport is unavailable; local names, captive portals and VPN DNS may break. Choose strict DNSSEC validation (yes, the default) or allow-downgrade for compatibility; downgrade mode may accept unsigned answers when validation is unavailable. Requires working systemd-resolved integration; /etc/resolv.conf is checked before execution. Only resolved is restarted, never NetworkManager.'
+    register_option SYSCTL 'Advanced kernel/sysctl restrictions' Security off sysctl_hardening 'Restricts kernel introspection, BPF, io_uring, core dumps and other interfaces; enables additional memory/network protections. Can break development tools, containers, debuggers and applications. Supported settings apply immediately; unsupported keys are reported. Some restrictions cannot be undone until reboot. This is not a universally safe desktop preset.'
+    register_option FLATPAK_STRICT 'Restrict all system Flatpaks' Security off strict_flatpak_overrides 'Installs Flatseal and applies global system Flatpak overrides denying host/home filesystem access and all devices. Can break GPU acceleration, games and application file access. Existing overrides are kept by default. Restore selective permissions with Flatseal, or reset global overrides with sudo flatpak override --system --reset (also removes other global customizations).'
+    register_option DIS_FS 'Block uncommon filesystem modules' Security off disable_obscure_fs 'Blocks cramfs, freevxfs, jffs2, hfs and hfsplus module loading. Refuses if any is mounted or listed in fstab. Does NOT block XFS, Btrfs, ext4, optical, network or virtual filesystems. Old Mac/media formats may become unreadable. Already loaded drivers are not unloaded; reboot may be needed.'
+    register_option DIS_OBSOLETE_NETWORKING 'Block legacy network protocols' Security off disable_obsolete_networking 'Blocks modules including DCCP, SCTP, RDS, TIPC, amateur-radio and CAN protocols. Specialized software, telecom tools, automotive tooling and some clusters may need these. Does not unload active modules. Remove the generated modprobe rule and reboot to restore loading.'
+    register_option DIS_THUNDERBOLT 'Block legacy FireWire drivers' Hardware off disable_fireware_thunderbolt 'Blocks legacy FireWire modules to reduce DMA attack surface. FireWire disks, cameras and audio interfaces will not work after module reload/reboot. Despite the historical config filename, Thunderbolt is NOT blocked: modern docks, displays and charging may depend on it.'
+    register_option DIS_GEOCLUE 'Disable location service' Security off disable_geoclue_service 'Stops and masks GeoClue if installed, independently of the desktop environment. Disables automatic location for maps, weather, time-zone changes and other clients. Restore with sudo systemctl unmask geoclue.service.'
+    register_option DIS_PRINTERS 'Disable printing and local discovery' Security off disable_cups_avahi 'Stops and masks CUPS and Avahi services and activation sockets when present. Printing and multicast-DNS discovery (.local names, network devices) may stop working. Restore the needed units with systemctl unmask and enable --now.'
+    register_option DIS_MODEM 'Disable mobile broadband service' Hardware off disable_modem_manager 'Stops and masks ModemManager if installed. Cellular modems/SIM mobile broadband will stop working. Does not disable Wi-Fi or Ethernet. Restore with sudo systemctl unmask ModemManager.service and enable --now.'
+    register_option USBGUARD 'Enforce USB allowlist' Security off setup_usbguard 'Installs USBGuard, generates a policy as root for devices currently connected, then activates enforcement only if that desired policy is present. Connect all trusted keyboards, mice, docks and storage first. Future devices may be blocked, including input devices. Have a built-in keyboard or recovery console available. Existing rules are kept unless backup-and-replace is chosen.'
+    register_option KERNEL 'Harden default kernel boot arguments' Security off hardened_kernel_args 'Adds CPU mitigations, memory initialization and strict IOMMU settings to the default kernel only. Requires at least two installed kernels and backs up boot entries. Can reduce performance or cause hardware/boot issues. Emergency shell and boot logs are retained. Select an older kernel from the boot menu if needed. New kernel installs may inherit these arguments.'
+    register_option NVIDIA 'Install NVIDIA akmod driver' Hardware off install_nvidia 'Installs akmod-nvidia for a detected NVIDIA display controller. Requires RPM Fusion Nonfree. Driver compilation takes time and compatible hardware/headers; older GPUs may need legacy packages instead. Refuses when Secure Boot is enabled or cannot be checked on EFI systems: configure akmods signing/MOK manually. Do not reboot until akmods has finished.'
+    register_option APPLE_KBD 'Apple keyboard: standard function keys' Hardware off hid_apple_patch 'Writes hid_apple fnmode=0 so function keys behave as standard F1-F12 keys. Applies at reboot; the currently used keyboard driver is not unloaded. Existing conflicting configuration is preserved by default.'
+    register_option DRACUT 'Bluetooth keyboard initramfs config' Hardware off add_dracut_flags 'Adds the Bluetooth dracut module for future initramfs builds, only if available. Does NOT rebuild existing boot images or guarantee pairing works at the LUKS prompt. Keep a wired/built-in keyboard and a recovery kernel. Rebuild a single test image manually after reviewing your pairing requirements.'
+    register_option TOR 'Install Tor daemon and browser launcher' Apps off install_tor 'Installs tor and torbrowser-launcher, then enables the Tor daemon. The launcher downloads Tor Browser on first use. Does NOT route all system traffic through Tor; use Tor Browser or explicitly configure applications. Review Tor service configuration before relying on it.'
+    register_option BASH 'Custom interactive Bash prompt' Apps off setup_bash_prompt 'Appends a prompt showing time, directory and Git branch. Replaces PROMPT_COMMAND/PS1, which can conflict with shell integrations. Existing .bashrc is kept by default; backup-and-replace backs it up before appending. Applies in new shells. Symlinked .bashrc is always left alone.'
+    register_option STEAM 'Steam and latest Proton-GE' Apps off setup_protonge 'Installs Steam via RPM Fusion, then downloads the latest Proton-GE from GitHub. Verifies the release-provided SHA-512 checksum and validates extraction paths. A checksum from the same source detects corruption, not a compromised publisher. Keeps an existing version directory. Restart Steam and select Proton-GE per game.'
+    register_option DEV_TOOLS 'Development toolchains' Apps off add_dev_tools 'Installs kernel-devel, Android tools, Python pip/development headers, Git, Node.js/npm and Go. These packages can use substantial disk space. Does not change project environments or install global pip/npm packages.'
+    register_option VIRTMANAGER 'QEMU/KVM and virt-manager' Apps off install_virtmanager 'Installs virt-manager, libvirt and QEMU/KVM, enables available libvirt sockets/service and adds you to the libvirt group if present. Hardware virtualization must be available. Group changes need a new login; libvirt access grants powerful host-management capabilities.'
+    register_option GIT_SSH 'Git identity and SSH key' Apps off configure_git_action 'Sets missing global Git name/email only; existing values are always retained. Creates ~/.ssh/id_ed25519 only when neither private nor public key exists. You will be prompted for a key passphrase during execution; existing keys are never overwritten. Does not upload your public key anywhere.'
+    register_option HELIUM 'Helium browser' Browser off browser_action 'Installs helium-bin from the imput/helium COPR. Enabling COPR trusts this third-party publisher. Does not remove Firefox or migrate browser data.'
+    register_option TRIVALENT 'Trivalent browser' Browser off browser_action 'Adds the Secureblue RPM repository and installs Trivalent. A hardened Chromium-based browser; review upstream compatibility/security guidance. Does not remove Firefox or migrate browser data.'
+    register_option BRAVE 'Brave browser with managed policies' Browser off browser_action 'Adds the official Brave RPM repository and installs Brave without executing a downloaded installer script. Adds managed policies disabling Rewards, Wallet, VPN, AI, News, Talk, Sync and Tor. Existing policy file is kept by default. Firefox and its data are retained.'
+    register_option CHROMIUM 'Chromium browser' Browser off browser_action 'Installs Fedora Chromium. Does not import data, change the default browser or remove Firefox.'
+    register_option LIBREWOLF 'LibreWolf browser' Browser off browser_action 'Adds the LibreWolf RPM repository and installs this privacy-oriented Firefox fork. Privacy defaults may affect website compatibility. Firefox and its profile remain untouched.'
+    register_option ZED 'Zed editor' Editor off editor_action 'Installs the zed RPM package. Requires the Terra repository (select the repository option or configure Terra yourself). Existing editor configuration is not changed.'
+    register_option VSCODIUM 'VSCodium editor' Editor off editor_action 'Imports the VSCodium signing key, adds its third-party RPM repository and installs codium. Existing repository configuration is kept by default. Does not migrate VS Code settings.'
+    register_option NEOVIM 'Neovim with NvChad starter' Editor off editor_action 'Installs Neovim and Git, then clones the NvChad starter only if the Neovim config path does not exist. Existing configs/directories/symlinks are always retained, even with replacement enabled. Plugins may download on first launch.'
+    register_option IVPN 'IVPN client' VPN off vpn_action 'Adds the official IVPN repository and installs ivpn-ui plus iptables-legacy. Requires a separately purchased IVPN account. Installing does not authenticate, connect or guarantee leak protection. Existing networking/firewall rules may interact with the client.'
+    register_option MULLVAD 'Mullvad VPN client' VPN off vpn_action 'Adds the official Mullvad repository and installs mullvad-vpn. Requires a separately purchased account. Installing does not authenticate, connect or guarantee leak protection. Review compatibility with strict DNS and firewall changes.'
+    # Disruptive actions run after all downloads, and are unavailable over SSH.
+    register_option FIREWALL 'Firewalld default zone: DROP' Disruptive off setup_firewall_drop 'Installs/enables firewalld and changes its default zone to drop, blocking unsolicited inbound traffic for interfaces using that default. Explicitly assigned connection zones are unchanged. May break SSH, sharing and LAN discovery. Does not persist unrelated runtime rules. Local-console use only. Restore with sudo firewall-cmd --set-default-zone=FedoraWorkstation (or your previous zone).'
+    register_option DIS_WEBCAM 'Block USB webcam driver' Disruptive off disable_webcam 'Blocks future uvcvideo module loading. Many USB/integrated webcams will not work after reboot; non-UVC cameras may remain available. Does not unload a camera already in use. Remove /etc/modprobe.d/disable-webcam.conf and reboot to restore.'
+    register_option DIS_BT 'Disable Bluetooth' Disruptive off disable_bluetooth 'Stops Bluetooth, blocks its radio if rfkill is available, and prevents Bluetooth module loading. Bluetooth keyboards, mice and audio may immediately disconnect. Keep wired input available. Conflicts with Bluetooth initramfs support. Local-console use only. Remove the rule, rfkill unblock bluetooth and re-enable the service to restore.'
+    register_option DIS_WIFI 'Disable Wi-Fi' Disruptive off disable_wifi 'Turns off Wi-Fi in NetworkManager, blocks its radio and stops wpa_supplicant. Also blocks several common Wi-Fi modules for future boots, but not every possible driver. Wireless connectivity is lost immediately. Only run with another working connection and local console. Remove the rule and unblock/re-enable Wi-Fi to restore.'
+}
 
-    case "$DNS_CHOICE" in
-        "Cloudflare") DNS_IPS="1.1.1.1 1.0.0.1 2606:4700:4700::1111 2606:4700:4700::1001" ;;
-        "Quad9") DNS_IPS="9.9.9.9 149.112.112.112 2620:fe::fe 2620:fe::9" ;;
-        "AdGuard") DNS_IPS="94.140.14.14 94.140.15.15 2a10:50c0::ad1:ff 2a10:50c0::ad2:ff" ;;
-        "Custom")
-            DNS_IPS=$(whiptail --title "Custom DNS" --inputbox "Enter DNS IPs (IPv4 and/or IPv6, space-separated):" 10 70 3>&1 1>&2 2>&3) || exit 0
-            ;;
-    esac
-fi
+selected() { [[ "${SELECTED[$1]:-off}" == on ]]; }
 
-# 2. Browser Selection
-BROWSER=$(whiptail --title "Web Browser" --radiolist \
-"Choose your preferred browser:" 15 60 6 \
-"None" "Stick with default Firefox" ON \
-"Helium" "helium.computer (Recommended)" OFF \
-"Trivalent" "secureblue.dev (Recommended)" OFF \
-"Brave" "Brave (Will be auto-debloated)" OFF \
-"Chromium" "Open-source Chrome" OFF \
-"Librewolf" "Privacy-focused Firefox fork" OFF \
-3>&1 1>&2 2>&3) || exit 0
+ui_message() { whiptail --title "$1" --scrolltext --msgbox "$2" "$UI_HEIGHT" "$UI_WIDTH"; }
 
-RM_FIREFOX="NO"
-if [ "$BROWSER" != "None" ]; then
-    if whiptail --title "Remove Firefox" --yesno "You selected $BROWSER. Do you want to remove Firefox entirely?" 10 60; then
-        RM_FIREFOX="YES"
+configure_group() {
+    local group="$1" id choice status state other
+    local -a items
+    while true; do
+        items=()
+        for id in "${OPTION_IDS[@]}"; do
+            [[ "${GROUP[$id]}" == "$group" ]] || continue
+            state='[ ]'; if selected "$id"; then state='[x]'; fi
+            items+=("$id" "$state ${LABEL[$id]}")
+        done
+        if choice=$(whiptail --title "$group options" --cancel-button Back --menu \
+            'Choose an item to read what it changes, its risks and how to undo it. Nothing is applied yet. Arrow keys: move | Enter: details | Esc: back' \
+            "$UI_HEIGHT" "$UI_WIDTH" "$LIST_HEIGHT" "${items[@]}" 3>&1 1>&2 2>&3); then
+            state=Enable; if selected "$choice"; then state=Disable; fi
+            if whiptail --title "${LABEL[$choice]}" --scrolltext --defaultno \
+                --yes-button "$state" --no-button Back --yesno \
+                "${DETAIL[$choice]}\n\nCurrent selection: ${SELECTED[$choice]}. Choose $state to change the plan; Back leaves it unchanged." \
+                "$UI_HEIGHT" "$UI_WIDTH"; then
+                if selected "$choice"; then
+                    SELECTED[$choice]=off
+                else
+                    case "$group" in
+                        Browser|Editor|VPN)
+                            for other in "${OPTION_IDS[@]}"; do
+                                if [[ "${GROUP[$other]}" == "$group" ]]; then SELECTED[$other]=off; fi
+                            done ;;
+                    esac
+                    SELECTED[$choice]=on
+                fi
+            else
+                status=$?
+                if [[ "$status" != 1 && "$status" != 255 ]]; then return "$status"; fi
+            fi
+        else
+            status=$?
+            if [[ "$status" == 1 || "$status" == 255 ]]; then return 0; fi
+            return "$status"
+        fi
+    done
+}
+
+validate_dns() {
+    python3 - "$1" <<'PY'
+import ipaddress
+import re
+import sys
+if '\n' in sys.argv[1] or '\r' in sys.argv[1]:
+    sys.exit('DNS addresses must be on a single line.')
+entries = sys.argv[1].split()
+if not entries:
+    sys.exit('Enter at least one DNS IP address.')
+for entry in entries:
+    ip, separator, hostname = entry.partition('#')
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        sys.exit(f'Invalid DNS IP: {ip}')
+    if '%' in ip or (separator and not re.fullmatch(r'(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?', hostname)):
+        sys.exit('Invalid DNS TLS hostname or address scope.')
+PY
+}
+
+valid_packages() {
+    local text="$1" pkg
+    local -a packages
+    [[ "$text" != *$'\n'* && "$text" != *$'\r'* ]] || return 1
+    read -r -a packages <<< "$text"
+    for pkg in "${packages[@]}"; do
+        if [[ "$pkg" == flatpak:* ]]; then
+            [[ "${pkg#flatpak:}" =~ ^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+){2,}$ ]] || return 1
+        else
+            [[ "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9+_.:-]*$ ]] || return 1
+        fi
+    done
+}
+
+collect_inputs() {
+    local choice error
+    DNS_IPS='' DNS_PROVIDER='' DNSSEC_MODE=yes
+    if selected SECURE_DNS; then
+        choice=$(whiptail --title 'DNS-over-TLS provider' --cancel-button Back --menu \
+            'DNS is sent to the chosen provider over TLS. Strict TLS may block captive portals and local/VPN names. Custom syntax: IP#certificate.hostname, separated by spaces.' \
+            "$UI_HEIGHT" "$UI_WIDTH" 4 \
+            Quad9 'Malware blocking: dns.quad9.net' \
+            Cloudflare 'General resolver: cloudflare-dns.com' \
+            AdGuard 'Ad/tracker filtering: dns.adguard-dns.com' \
+            Custom 'Your own TLS-capable resolvers' 3>&1 1>&2 2>&3) || return 1
+        case "$choice" in
+            Quad9) DNS_IPS='9.9.9.9#dns.quad9.net 149.112.112.112#dns.quad9.net' ;;
+            Cloudflare) DNS_IPS='1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com' ;;
+            AdGuard) DNS_IPS='94.140.14.14#dns.adguard-dns.com 94.140.15.15#dns.adguard-dns.com' ;;
+            Custom)
+                while true; do
+                    DNS_IPS=$(whiptail --title 'Custom DNS-over-TLS' --inputbox \
+                        'Space-separated IPs, optionally with #TLS-hostname. Without a hostname, the server certificate must authenticate the IP. No URLs, ports or configuration directives.' \
+                        12 "$UI_WIDTH" "$DNS_IPS" 3>&1 1>&2 2>&3) || return 1
+                    if error=$(validate_dns "$DNS_IPS" 2>&1); then break; fi
+                    ui_message 'Invalid DNS addresses' "$error" || return 1
+                done ;;
+        esac
+        DNS_PROVIDER="$choice"
+        DNSSEC_MODE=$(choose_dnssec "$UI_HEIGHT" "$UI_WIDTH") || return 1
     fi
-fi
+    GIT_NAME='' GIT_EMAIL=''
+    if selected GIT_SSH; then
+        if command_exists git; then
+            GIT_NAME=$(git config --global --get user.name || true)
+            GIT_EMAIL=$(git config --global --get user.email || true)
+        fi
+        while [[ ! "$GIT_NAME" =~ [^[:space:]] ]]; do
+            GIT_NAME=$(whiptail --title 'Git commit identity' --inputbox \
+                'Name for Git commits (required). Existing global Git values are never replaced. SSH key generation will ask for a passphrase during execution.' \
+                12 "$UI_WIDTH" 3>&1 1>&2 2>&3) || return 1
+        done
+        if [[ -z "$GIT_EMAIL" ]]; then
+            while [[ ! "$GIT_EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]]; do
+                GIT_EMAIL=$(whiptail --title 'Git commit email' --inputbox \
+                    'Email for Git commits, e.g. you@example.org or your forge no-reply address. Existing global values are retained.' \
+                    12 "$UI_WIDTH" 3>&1 1>&2 2>&3) || return 1
+            done
+        fi
+    fi
+    return 0
+}
 
-# 3. Code Editor
-EDITOR=$(whiptail --title "Code Editor" --radiolist \
-"Choose your preferred code editor:" 15 60 4 \
-"None" "Skip code editor" ON \
-"Zed" "High-performance code editor made using Rust" OFF \
-"VSCodium" "Telemetry-free VS Code" OFF \
-"NeoVim" "NeoVim + NvChad starter" OFF \
-3>&1 1>&2 2>&3) || exit 0
+configure_policy() {
+    local choice
+    choice=$(whiptail --title 'Existing configuration files' --default-item "$CONFIG_POLICY" \
+        --cancel-button Back --menu \
+        'Keep is the default. Replacement backs up changed files, not packages, service state or every change. Neither choice provides automatic rollback. Symlink safety checks and always-preserved user settings still apply.' \
+        "$UI_HEIGHT" "$UI_WIDTH" 2 \
+        keep 'Keep existing files; conflicting new settings are skipped' \
+        replace 'Back up existing files, then replace with selected settings' \
+        3>&1 1>&2 2>&3) || return 1
+    CONFIG_POLICY="$choice"
+}
 
-# 4. VPN Selection
-VPN=$(whiptail --title "VPN Provider" --radiolist \
-"Choose a VPN provider to install:" 15 60 3 \
-"None" "Skip VPN installation" ON \
-"IVPN" "ivpn.net" OFF \
-"Mullvad" "mullvad.net" OFF \
-3>&1 1>&2 2>&3) || exit 0
+configure_extra_packages() {
+    local text
+    while true; do
+        text=$(whiptail --title 'Extra packages' --cancel-button Back --inputbox \
+            'Optional space-separated RPM package names or flatpak:APP.ID entries (example: htop flatpak:org.videolan.VLC). No options, URLs, paths, wildcards or shell commands. Flatpaks use system-wide Flathub, which will be added if needed. Blank skips extras.' \
+            "$UI_HEIGHT" "$UI_WIDTH" "$EXTRA_PKGS" 3>&1 1>&2 2>&3) || return 1
+        if valid_packages "$text"; then EXTRA_PKGS="$text"; return 0; fi
+        ui_message 'Invalid package list' 'Use only package names or flatpak:APP.ID entries separated by spaces. Options, URLs, paths and shell syntax are not accepted.' || return 1
+    done
+}
 
-# 5. Application Checklist
-APP_OPTS=$(whiptail --title "Additional Applications" --checklist \
-"Select other applications to install:" 15 70 5 \
-"STEAM" "Steam + Latest Proton-GE" OFF \
-"DEV_TOOLS" "Developer Tools (Node, Git, Go, Python)" OFF \
-"VIRTMANAGER" "virt-manager (Virtual Machine Manager)" OFF \
-"GIT_SSH" "Generate SSH Keys and setup Git Config" OFF \
-3>&1 1>&2 2>&3) || exit 0
-APP_OPTS=$(echo "$APP_OPTS" | tr -d '"')
+build_review() {
+    local id
+    printf 'FQS execution plan\n\n'
+    printf 'Configuration policy: %s\n' "$CONFIG_POLICY"
+    if [[ "$CONFIG_POLICY" == keep ]]; then
+        printf 'Existing files are kept; selected settings may be SKIPPED. Packages and service changes can still run. Watch stdout for kept/skipped configuration messages.\n'
+    else
+        printf 'Changed configuration files are backed up under /var/backups/fqs; .bashrc backups stay beside the original. Backups are NOT a full-system rollback.\n'
+    fi
+    printf '\nOnly the following selected actions will run:\n'
+    for id in "${OPTION_IDS[@]}"; do
+        if selected "$id"; then
+            printf '\n[%s] %s\n%s\n' "${GROUP[$id]}" "${LABEL[$id]}" "${DETAIL[$id]}"
+        fi
+    done
+    if selected SECURE_DNS; then
+        printf '\nDNS provider: %s\nDNS servers: %s\nDNSSEC mode: %s\n' "$DNS_PROVIDER" "$DNS_IPS" "$DNSSEC_MODE"
+    fi
+    if selected GIT_SSH; then
+        printf '\nGit name: %s\nGit email: %s\nExisting Git identity and SSH keys are retained.\n' "$GIT_NAME" "$GIT_EMAIL"
+    fi
+    printf '\nExtra packages: %s\n' "${EXTRA_PKGS:-none}"
+    printf '\nPackage/repository, service, network, permission and boot changes are NOT automatically rolled back, even on failure or cancellation. Configuration backups do not undo all changes.\n'
+    printf 'Progress and configuration skips are printed to stdout; no persistent log is created. No automatic reboot, Secure Boot enrollment or Firefox removal.\n\nApply this plan? Back returns to the menu without applying it.\n'
+}
 
-# 6. Git Config (If selected)
-GIT_NAME=""
-GIT_EMAIL=""
-if [[ "$APP_OPTS" == *"GIT_SSH"* ]]; then
-    GIT_NAME=$(whiptail --title "Git Configuration" --inputbox "Enter your Name for Git commits:" 10 60 3>&1 1>&2 2>&3) || exit 0
-    GIT_EMAIL=$(whiptail --title "Git Configuration" --inputbox "Enter your Email for Git commits:" 10 60 3>&1 1>&2 2>&3) || exit 0
-fi
+preflight_checks() {
+    local id repos target sb_state
+    for id in "${OPTION_IDS[@]}"; do
+        if selected "$id" && [[ "${GROUP[$id]}" == Disruptive ]] &&
+            [[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ]]; then
+            fail "${LABEL[$id]} is unavailable over SSH. Use a local console or deselect it."
+            return 1
+        fi
+    done
+    if selected DIS_BT && selected DRACUT; then
+        fail 'Disabling Bluetooth conflicts with Bluetooth keyboard initramfs support.'
+        return 1
+    fi
+    if ! valid_packages "$EXTRA_PKGS"; then fail 'Invalid extra packages.'; return 1; fi
+    if ! selected REPOS; then
+        if selected STEAM || selected NVIDIA || selected ZED; then
+            repos=$(dnf -q --cacheonly repolist --enabled) || {
+                fail 'Cannot inspect enabled repositories from the DNF cache. Select repository setup or configure/cache repositories manually.'
+                return 1
+            }
+            if selected STEAM || selected NVIDIA; then
+                if ! grep -Eq '^rpmfusion-nonfree([[:space:]]|-updates[[:space:]])' <<< "$repos"; then
+                    fail 'Steam/NVIDIA requires enabled RPM Fusion Nonfree; select repository setup or enable it manually.'
+                    return 1
+                fi
+            fi
+            if selected ZED && ! grep -Eq '^terra[[:space:]]' <<< "$repos"; then
+                fail 'Zed requires enabled Terra; select repository setup or enable it manually.'
+                return 1
+            fi
+        fi
+    fi
+    if selected SECURE_DNS; then
+        validate_dns "$DNS_IPS" || return 1
+        case "$DNSSEC_MODE" in yes|allow-downgrade) ;; *) fail 'Invalid DNSSEC mode.'; return 1 ;; esac
+        if ! unit_exists systemd-resolved.service; then
+            fail 'Install systemd-resolved and integrate /etc/resolv.conf before selecting secure DNS.'
+            return 1
+        fi
+        target=$(readlink -m /etc/resolv.conf) || return 1
+        if [[ ! -L /etc/resolv.conf || "$target" != /run/systemd/resolve/stub-resolv.conf ]]; then
+            fail 'Secure DNS requires /etc/resolv.conf to link to /run/systemd/resolve/stub-resolv.conf. Configure resolved integration manually first; FQS will not replace resolv.conf.'
+            return 1
+        fi
+    fi
+    if selected DRACUT; then
+        if ! command_exists dracut || ! dracut --list-modules | grep -qx '[[:space:]]*bluetooth'; then
+            fail 'Bluetooth initramfs support requires an installed dracut Bluetooth module.'
+            return 1
+        fi
+    fi
+    if selected NVIDIA; then
+        if ! command_exists lspci || ! lspci -nn | grep -Ei '(VGA|3D|Display)' | grep -qi nvidia; then
+            fail 'NVIDIA installation requires a detected NVIDIA display controller (lspci).'
+            return 1
+        fi
+        if [[ -d /sys/firmware/efi ]]; then
+            if ! command_exists mokutil || ! sb_state=$(mokutil --sb-state) ||
+                ! grep -qi 'SecureBoot disabled' <<< "$sb_state"; then
+                fail 'Secure Boot is enabled or cannot be checked. Prepare akmods signing/MOK manually; FQS never enrolls keys.'
+                return 1
+            fi
+        fi
+    fi
+    return 0
+}
 
-# 7. Extra Packages
-EXTRA_PKGS=$(whiptail --title "Extra Packages" --inputbox \
-"Enter any additional packages to install via DNF or Flatpak (space-separated, leave blank to skip):" 10 70 3>&1 1>&2 2>&3) || exit 0
+browser_action() {
+    case "$1" in
+        HELIUM) install_browser Helium ;;
+        TRIVALENT) install_browser Trivalent ;;
+        BRAVE) install_browser Brave ;;
+        CHROMIUM) install_browser Chromium ;;
+        LIBREWOLF) install_browser Librewolf ;;
+        *) fail "Unknown browser option: $1" ;;
+    esac
+}
 
-whiptail --title "Ready to Go" --msgbox "Configuration complete! The system will now execute your choices. Please sit back and wait for it to finish." 10 60
-clear
+editor_action() {
+    case "$1" in
+        ZED) install_code_editor Zed ;;
+        VSCODIUM) install_code_editor VSCodium ;;
+        NEOVIM) install_code_editor NeoVim ;;
+        *) fail "Unknown editor option: $1" ;;
+    esac
+}
 
-# Execute
+vpn_action() {
+    case "$1" in
+        IVPN) install_vpn_app IVPN ;;
+        MULLVAD) install_vpn_app Mullvad ;;
+        *) fail "Unknown VPN option: $1" ;;
+    esac
+}
 
-[[ "$BASE_OPTS" == *"DNF"* ]] && append_dnf_configs
-[[ "$BASE_OPTS" == *"UPDATE"* ]] && sys_update
-[[ "$BASE_OPTS" == *"REPOS"* ]] && setup_repos
-[[ "$BASE_OPTS" == *"AUTO_UPDATES"* ]] && setup_auto_updates
-[[ "$BASE_OPTS" == *"FAIL2BAN"* ]] && install_fail2ban
-[[ "$BASE_OPTS" == *"MAC_RAND"* ]] && mac_randomization
-[[ "$BASE_OPTS" == *"HOSTNAME_SENDING"* ]] && prevent_sending_dhcp_hostname
-[[ "$BASE_OPTS" == *"DIS_GEOCLUE"* ]] && disable_geoclue
-[[ "$BASE_OPTS" == *"IPV6_PRIV"* ]] && ipv6_privacy
-[[ "$BASE_OPTS" == *"SYSCTL"* ]] && sysctl_hardening
-[[ "$BASE_OPTS" == *"FLATPAK_STRICT"* ]] && strict_flatpak_overrides
-[[ "$BASE_OPTS" == *"SECURE_DNS"* ]] && enable_secure_dns "$DNS_IPS"
-[[ "$BASE_OPTS" == *"DIS_FS"* ]] && disable_obscure_fs
-[[ "$BASE_OPTS" == *"DIS_THUNDERBOLT"* ]] && disable_fireware_thunderbolt
-[[ "$BASE_OPTS" == *"DIS_OBSOLETE_NETWORKING"* ]] && disable_obsolete_networking
-[[ "$BASE_OPTS" == *"DIS_PRINTERS"* ]] && disable_cups_avahi
-[[ "$BASE_OPTS" == *"DIS_MODEM"* ]] && disable_modem_manager
-[[ "$BASE_OPTS" == *"DIS_WIFI"* ]] && disable_wifi
-[[ "$BASE_OPTS" == *"DIS_BT"* ]] && disable_bluetooth
-[[ "$BASE_OPTS" == *"DIS_WEBCAM"* ]] && disable_webcam
-[[ "$BASE_OPTS" == *"USBGUARD"* ]] && setup_usbguard
-[[ "$BASE_OPTS" == *"KERNEL"* ]] && hardened_kernel_args
-[[ "$BASE_OPTS" == *"NVIDIA"* ]] && install_nvidia
-[[ "$BASE_OPTS" == *"APPLE_KBD"* ]] && hid_apple_patch
-[[ "$BASE_OPTS" == *"DRACUT"* ]] && add_dracut_flags
-[[ "$BASE_OPTS" == *"TOR"* ]] && install_tor
-[[ "$BASE_OPTS" == *"BASH"* ]] && setup_bash_prompt
-[[ "$BASE_OPTS" == *"SECUREBOOT"* ]] && enroll_secureboot
+configure_git_action() { setup_config "$GIT_NAME" "$GIT_EMAIL"; }
+configure_dns_action() {
+    enable_secure_dns "$DNS_IPS" "$DNSSEC_MODE"
+    if [[ "$CONFIG_READY" == true ]]; then
+        restart_networking_stack
+    else
+        printf 'Conflicting DNS configuration kept; resolver restart skipped.\n'
+    fi
+}
 
-[ "$BROWSER" != "None" ] && install_browser "$BROWSER"
-if [ "$RM_FIREFOX" == "YES" ]; then
-    echo -e "\n=> Removing Firefox..."
-    sudo dnf remove firefox -y
-fi
+report_config_skips() {
+    local target=''
+    if [[ "$CONFIG_POLICY" != keep ]]; then return 0; fi
+    # These legacy helpers bypass write_config entirely when the file exists.
+    case "$1" in
+        MAC_RAND) target=/etc/NetworkManager/conf.d/00-macrandomize.conf ;;
+        HOSTNAME_SENDING) target=/etc/NetworkManager/conf.d/10-dhcp-hostname.conf ;;
+        IPV6_PRIV) target=/etc/NetworkManager/conf.d/00-ipv6-privacy.conf ;;
+        DIS_FS) target=/etc/modprobe.d/disable-fs.conf ;;
+        DIS_OBSOLETE_NETWORKING) target=/etc/modprobe.d/disable-obsolete-networking.conf ;;
+        DIS_THUNDERBOLT) target=/etc/modprobe.d/disable-fireware-thunderbolt.conf ;;
+    esac
+    if [[ -n "$target" && ( -e "$target" || -L "$target" ) ]]; then
+        printf 'Keeping existing configuration; new settings skipped: %s\n' "$target"
+    fi
+}
 
-[ "$EDITOR" != "None" ] && install_code_editor "$EDITOR"
-[ "$VPN" != "None" ] && install_vpn_app "$VPN"
+execute_plan() {
+    local id phase
+    # Keep disruptive changes after every download, including extra packages.
+    for phase in normal disruptive; do
+        for id in "${OPTION_IDS[@]}"; do
+            if ! selected "$id"; then continue; fi
+            if [[ "$phase" == normal && "${GROUP[$id]}" == Disruptive ]]; then continue; fi
+            if [[ "$phase" == disruptive && "${GROUP[$id]}" != Disruptive ]]; then continue; fi
+            CURRENT_ACTION="${LABEL[$id]}"
+            printf '\n=> %s\n' "$CURRENT_ACTION"
+            report_config_skips "$id"
+            # Never put actions (or this function/main) in an if/&&/|| condition:
+            # Bash would suppress errexit inside the called action helpers.
+            "${ACTION[$id]}" "$id"
+        done
+        if [[ "$phase" == normal && -n "$EXTRA_PKGS" ]]; then
+            CURRENT_ACTION='Extra packages'
+            install_selection "$EXTRA_PKGS"
+        fi
+    done
+}
 
-[[ "$APP_OPTS" == *"STEAM"* ]] && setup_protonge
-[[ "$APP_OPTS" == *"DEV_TOOLS"* ]] && add_dev_tools
-[[ "$APP_OPTS" == *"VIRTMANAGER"* ]] && install_virtmanager
-[[ "$APP_OPTS" == *"GIT_SSH"* ]] && setup_config "$GIT_NAME" "$GIT_EMAIL"
+startup_checks() {
+    local cmd rows columns options path lock_dir
+    [[ "$EUID" -ne 0 ]] || { fail 'Run FQS as your normal user, not root or sudo.'; return 1; }
+    [[ -t 0 && -t 1 && -t 2 ]] || { fail 'An interactive terminal is required on stdin, stdout and stderr.'; return 1; }
+    [[ -n "${TERM:-}" && "$TERM" != dumb ]] || { fail 'A capable TERM setting is required.'; return 1; }
+    [[ -r /etc/os-release ]] || { fail 'Cannot identify this operating system.'; return 1; }
+    local ID=''
+    # shellcheck source=/dev/null
+    . /etc/os-release
+    [[ "$ID" == fedora ]] || { fail 'FQS supports Fedora only.'; return 1; }
+    [[ ! -e /run/ostree-booted ]] || { fail 'Immutable/OSTree Fedora is not supported; use a writable DNF system.'; return 1; }
+    for cmd in dnf rpm systemctl sudo python3 curl mktemp stty readlink findmnt flock; do
+        command_exists "$cmd" || { fail "Required command is unavailable: $cmd"; return 1; }
+    done
+    [[ -d /run/systemd/system ]] && systemctl show --property=Version --value >/dev/null || {
+        fail 'A running systemd system manager is required.'; return 1;
+    }
+    for path in /usr /etc /var; do
+        options=$(findmnt -n -o OPTIONS --target "$path") || return 1
+        case ",$options," in *,ro,*) fail "$path is read-only; a writable Fedora DNF installation is required."; return 1 ;; esac
+    done
+    read -r rows columns < <(stty size)
+    [[ "$rows" =~ ^[0-9]+$ && "$columns" =~ ^[0-9]+$ ]] || {
+        fail 'Cannot determine terminal size.'; return 1;
+    }
+    if (( rows < 24 || columns < 80 )); then fail 'Resize the terminal to at least 80 columns by 24 rows.'; return 1; fi
+    UI_HEIGHT=$((rows - 2)) UI_WIDTH=$((columns - 2))
+    if (( UI_HEIGHT > 32 )); then UI_HEIGHT=32; fi
+    if (( UI_WIDTH > 110 )); then UI_WIDTH=110; fi
+    LIST_HEIGHT=$((UI_HEIGHT - 10))
+    lock_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/fqs"
+    mkdir -p -m 0700 "$lock_dir"
+    # Lock the directory without creating/truncating a potentially linked file.
+    exec 9< "$lock_dir"
+    flock --nonblock 9 || { fail 'Another FQS session is already running.'; return 1; }
+}
 
-[ -n "$EXTRA_PKGS" ] && install_selection "$EXTRA_PKGS"
+ensure_whiptail() {
+    local approval
+    if command_exists whiptail; then return 0; fi
+    printf 'FQS needs whiptail for its menus. Installing it is a system change BEFORE plan review.\n'
+    printf 'No other actions or sudo keeper will start now. Type INSTALL to approve sudo dnf install -y newt, or anything else to cancel: '
+    read -r approval || return 1
+    if [[ "$approval" != INSTALL ]]; then printf 'Cancelled; whiptail was not installed.\n'; return 1; fi
+    sudo dnf install -y newt
+    command_exists whiptail
+}
 
-[[ "$BASE_OPTS" == *"FIREWALL"* ]] && setup_firewall_drop
+main() {
+    set -Eeuo pipefail
+    trap cleanup EXIT
+    trap 'on_error "$?" "$LINENO"' ERR
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    startup_checks
+    WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fqs.XXXXXXXX")
+    ensure_whiptail
+    init_options
+    EXTRA_PKGS=''
+    local choice error plan
+    while true; do
+        choice=$(whiptail --title 'FQS - build your plan' --cancel-button Quit --menu \
+            'Only package updates are selected initially. Enter a category, then read/toggle individual actions. Nothing is applied until review and explicit confirmation. Configuration backups are not full rollback.' \
+            "$UI_HEIGHT" "$UI_WIDTH" "$LIST_HEIGHT" \
+            System 'Updates, download settings and repositories' \
+            Network 'Network privacy and encrypted DNS' \
+            Security 'Services, permissions and advanced hardening' \
+            Hardware 'Drivers and hardware configuration' \
+            Apps 'Applications, development tools and Git' \
+            Browser 'Choose at most one; Firefox is retained' \
+            Editor 'Choose at most one editor' \
+            VPN 'Choose at most one VPN client' \
+            Disruptive 'Local-console-only device/network changes' \
+            Policy "Existing configuration: $CONFIG_POLICY" \
+            Extras 'Optional validated RPM/Flatpak packages' \
+            Review 'Collect details, check and review selected actions' \
+            3>&1 1>&2 2>&3) || { printf 'Cancelled; no selected actions were run.\n'; return 0; }
+        case "$choice" in
+            Policy) configure_policy || continue ;;
+            Extras) configure_extra_packages || continue ;;
+            Review)
+                collect_inputs || continue
+                if error=$(preflight_checks 2>&1); then
+                    plan=$(build_review)
+                    if whiptail --title 'Review - no automatic rollback' --scrolltext --defaultno \
+                        --yes-button Apply --no-button Back --yesno "$plan" "$UI_HEIGHT" "$UI_WIDTH"; then
+                        break
+                    fi
+                else
+                    ui_message 'Preflight failed - nothing applied' "$error" || continue
+                fi ;;
+            *) configure_group "$choice" ;;
+        esac
+    done
+    CURRENT_ACTION='Sudo authentication'
+    sudo -v
+    # Start credential refresh only after explicit approval of the complete plan.
+    ( exec 9<&-; trap - EXIT ERR INT TERM HUP; while sleep 50; do sudo -n -v || exit; done ) &
+    SUDO_PID=$!
+    printf '\nApplying the reviewed plan. Earlier changes are NOT rolled back on failure.\n'
+    execute_plan
+    CURRENT_ACTION='complete'
+    printf '\nSelected actions finished. Check kept/skipped settings and warnings above; this is not a guarantee of system security.\n'
+    if [[ -n "$BACKUP_DIR" ]]; then printf 'Configuration backups: %s\n' "$BACKUP_DIR"; fi
+    printf 'No automatic reboot was performed. Review whether your updates, drivers or boot changes require one.\n'
+}
 
-# Restart networking stack last to prevent timing out during updates/installs
-restart_networking_stack
-
-echo -e "\n\e[32m[+] All steps complete! Your system is now set up and rock solid.\e[0m"
-if [[ "$BASE_OPTS" == *"SECUREBOOT"* ]] || [[ "$APP_OPTS" == *"VIRTMANAGER"* ]]; then
-    echo -e "\e[33m[!] Note: A reboot is highly recommended to apply Secure Boot/virt-manager changes.\e[0m"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
 fi
